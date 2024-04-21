@@ -82,7 +82,7 @@ with moonsync_image.imports():
 # TERRA_API_KEY=your_terra_api_key
 # ANTHROPIC_API_KEY=your_anthropic_api_key
 
-@app.cls(gpu=gpu.A10G(), container_idle_timeout=240, image=moonsync_image, secrets=[Secret.from_dotenv(__file__)])
+@app.cls(gpu=gpu.A10G(), container_idle_timeout=240, image=moonsync_image, secrets=[modal.Secret.from_name("moonsync-secret")])
 class Model:
     @build()
     def build(self):
