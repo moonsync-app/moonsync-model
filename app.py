@@ -14,6 +14,8 @@ from modal import (
     Secret,
 )
 
+from fastapi.responses import StreamingResponse
+
 
 moonsync_image = (
     Image.debian_slim(python_version="3.10")
@@ -27,6 +29,7 @@ moonsync_image = (
         "llama-index-core~=0.10.29",
         "llama-index-agent-openai~=0.2.2",
         "llama-index-callbacks-arize-phoenix~=0.1.2",
+        "llama-index-experimental~=0.1.3",
         "llama-index-llms-anthropic~=0.1.10",
         "llama-index-llms-openai-like~=0.1.3",
         "llama-index-vector-stores-pinecone~=0.1.4",
@@ -42,43 +45,7 @@ moonsync_image = (
 
 app = App("moonsync-modal-app")
 
-with moonsync_image.imports():
-    import phoenix as px
-    from llama_index.core import (
-        set_global_handler,
-    )
-    from pinecone import Pinecone, ServerlessSpec
-    from getpass import getpass
-    import sys
-    import os
-    from llama_index.core import Settings
-    from llama_index.llms.anthropic import Anthropic
-    from llama_index.llms.openai import OpenAI
-    from llama_index.core import VectorStoreIndex
-    from llama_index.vector_stores.pinecone import PineconeVectorStore
-    from llama_index.core.prompts import ChatPromptTemplate, SelectorPromptTemplate
-    from llama_index.core.indices import EmptyIndex
-    from llama_index.core import get_response_synthesizer
-    from llama_index.core.query_engine import RouterQueryEngine, SubQuestionQueryEngine
-    from llama_index.core.selectors import LLMSingleSelector, LLMMultiSelector
-    from llama_index.core.selectors import (
-        PydanticMultiSelector,
-        PydanticSingleSelector,
-    )
-    from llama_index.core.tools import QueryEngineTool, ToolMetadata
-    from llama_index.core.chat_engine.context import ContextChatEngine
-    from llama_index.core.chat_engine import (
-        CondenseQuestionChatEngine,
-        CondensePlusContextChatEngine,
-        SimpleChatEngine,
-    )
-    from llama_index.core.indices.base_retriever import BaseRetriever
-    from llama_index.core.llms import ChatMessage, MessageRole
-    from llama_index.core.memory import BaseMemory
-    from llama_index.core.indices.service_context import ServiceContext
-    from llama_index.core.memory import ChatMemoryBuffer
-    from llama_index.core import PromptTemplate
-    from fastapi import Response
+# with moonsync_image.imports():
 
 
 # ## Load model and run inference
@@ -109,10 +76,48 @@ class Model:
 
     @enter()
     def enter(self):
+        # import phoenix as px
+        from llama_index.core import (
+            set_global_handler,
+        )
+        from pinecone import Pinecone, ServerlessSpec
+        from getpass import getpass
+        import sys
+        import os
+        from llama_index.core import Settings
+        from llama_index.llms.anthropic import Anthropic
+        from llama_index.llms.openai import OpenAI
+        from llama_index.core import VectorStoreIndex
+        from llama_index.vector_stores.pinecone import PineconeVectorStore
+        from llama_index.core.prompts import ChatPromptTemplate, SelectorPromptTemplate
+        from llama_index.core.indices import EmptyIndex
+        from llama_index.core import get_response_synthesizer
+        from llama_index.core.query_engine import RouterQueryEngine, SubQuestionQueryEngine
+        from llama_index.core.selectors import LLMSingleSelector, LLMMultiSelector
+        from llama_index.core.selectors import (
+            PydanticMultiSelector,
+            PydanticSingleSelector,
+        )
+        from llama_index.core.tools import QueryEngineTool, ToolMetadata
+        from llama_index.core.chat_engine.context import ContextChatEngine
+        from llama_index.core.chat_engine import (
+            CondenseQuestionChatEngine,
+            CondensePlusContextChatEngine,
+            SimpleChatEngine,
+        )
+        from llama_index.core.indices.base_retriever import BaseRetriever
+        from llama_index.core.llms import ChatMessage, MessageRole
+        from llama_index.core.memory import BaseMemory
+        from llama_index.core.indices.service_context import ServiceContext
+        from llama_index.core.memory import ChatMemoryBuffer
+        from llama_index.core import PromptTemplate
+        from llama_index.experimental.query_engine import PandasQueryEngine
+        import pandas as pd
+        from fastapi import Response
+
         # Load phoenix for tracing
         # session = px.launch_app()
         # set_global_handler("arize_phoenix")
-
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
         pc = Pinecone(api_key=api_key)
@@ -120,7 +125,6 @@ class Model:
         # LLM Model
         llm = OpenAI(model="gpt-4-turbo", temperature=0)
         Settings.llm = llm
-
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
@@ -164,6 +168,13 @@ class Model:
             fitness_wellness_query_engine,
         ) = query_engines
         empty_query_engine = EmptyIndex().as_query_engine()
+
+        self.df = pd.read_csv(
+            "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/biometric_data.csv"
+        )
+        print(self.df.head())
+
+        pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=llm)
 
         SYSTEM_PROMPT = (
             "You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
@@ -238,7 +249,7 @@ class Model:
             text_qa_template=text_qa_template,
             refine_template=refine_template,
             use_async=False,
-            streaming=False,
+            streaming=True,
         )
 
         """### Create tools for each category"""
@@ -282,6 +293,19 @@ class Model:
             ),
         )
 
+        biometric_tool = QueryEngineTool(
+            query_engine=pandas_query_engine,
+            metadata=ToolMetadata(
+                name="biometrics",
+                description="Use this to get relevant biometric data relevant to the query. The columns are - "
+                "'date', 'recovery_score', 'activity_score', 'sleep_score',"
+                "'stress_data', 'number_steps', 'total_burned_calories',"
+                "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
+                "'duration_in_bed_seconds_data', 'duration_deep_sleep',"
+                "'temperature_delta'",
+            ),
+        )
+
         router_query_engine = RouterQueryEngine(
             selector=LLMMultiSelector.from_defaults(),
             query_engine_tools=[
@@ -302,6 +326,7 @@ class Model:
                 general_tool,
                 fitness_wellness_tool,
                 default_tool,
+                biometric_tool,
             ],
             llm=llm,
             response_synthesizer=response_synthesizer,
@@ -323,98 +348,28 @@ class Model:
             {question}
 
             <Standalone question>
-        """
-        )
+        """)
 
         # chat_history = [
         #     ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
         # ]
 
-        chat_engine = CondenseQuestionChatEngine.from_defaults(
+        self.chat_engine = CondenseQuestionChatEngine.from_defaults(
             query_engine=sub_question_query_engine,
             llm=llm,
             memory=memory,
-            condense_question_prompt = custom_prompt,
+            condense_question_prompt=custom_prompt,
         )
 
-
-
-    # def _inference(self, prompt, n_steps=24, high_noise_frac=0.8):
-    #     pass
-
-    # @method()
-    # def inference(self, prompt, n_steps=24, high_noise_frac=0.8):
-    #     return self._inference(
-    #         prompt, n_steps=n_steps, high_noise_frac=high_noise_frac
-    #     ).getvalue()
+    def _inference(self, prompt: str):
+        streaming_response = self.chat_engine.stream_chat(
+            prompt
+        )
+        for token in streaming_response.response_gen:
+            yield token
 
     @web_endpoint()
     def web_inference(self):
-        return Response(content="Hello, world!").getvalue(), 200
+        return StreamingResponse(self._inference(), media_type="text/event-stream")
 
-
-# And this is our entrypoint; where the CLI is invoked. Explore CLI options
-# with: `modal run stable_diffusion_xl.py --help
-
-
-# @app.local_entrypoint()
-# def main(prompt: str = "Unicorns and leprechauns sign a peace treaty"):
-#     image_bytes = Model().inference.remote(prompt)
-
-#     dir = Path("/tmp/stable-diffusion-xl")
-#     if not dir.exists():
-#         dir.mkdir(exist_ok=True, parents=True)
-
-#     output_path = dir / "output.png"
-#     print(f"Saving it to {output_path}")
-#     with open(output_path, "wb") as f:
-#         f.write(image_bytes)
-
-
-# ## A user interface
-#
-# Here we ship a simple web application that exposes a front-end (written in Alpine.js) for
-# our backend deployment.
-#
-# The Model class will serve multiple users from a its own shared pool of warm GPU containers automatically.
-#
-# We can deploy this with `modal deploy stable_diffusion_xl.py`.
-
-# frontend_path = Path(__file__).parent / "frontend"
-
-# web_image = Image.debian_slim().pip_install("jinja2")
-
-
-# @app.function(
-#     image=web_image,
-#     # mounts=[Mount.from_local_dir(frontend_path, remote_path="/assets")],
-#     allow_concurrent_inputs=20,
-# )
-# @asgi_app()
-# def ui():
-#     import fastapi.staticfiles
-#     from fastapi import FastAPI, Request
-#     from fastapi.templating import Jinja2Templates
-
-#     web_app = FastAPI()
-#     templates = Jinja2Templates(directory="/assets")
-
-#     @web_app.get("/")
-#     async def read_root(request: Request):
-#         return templates.TemplateResponse(
-#             "index.html",
-#             {
-#                 "request": request,
-#                 "inference_url": Model.web_inference.web_url,
-#                 "model_name": "Stable Diffusion XL",
-#                 "default_prompt": "A cinematic shot of a baby raccoon wearing an intricate italian priest robe.",
-#             },
-#         )
-
-#     web_app.mount(
-#         "/static",
-#         fastapi.staticfiles.StaticFiles(directory="/assets"),
-#         name="static",
-#     )
-
-#     return web_app
+        # return Response(content="Hello, world!").getvalue(), 200
