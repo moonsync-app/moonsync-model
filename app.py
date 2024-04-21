@@ -39,6 +39,7 @@ moonsync_image = (
         "pinecone-client~=3.2.2",
         "requests~=2.31.0",
         "fastapi~=0.68.1",
+        "pandas~=2.2.1",
         # "arize-phoenix~=3.22.0",
     )
 )
@@ -170,8 +171,10 @@ class Model:
         empty_query_engine = EmptyIndex().as_query_engine()
 
         self.df = pd.read_csv(
-            "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/biometric_data.csv"
+            "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/data/biometric_data.csv"
         )
+        self.df["date"] = self.df["date"].apply(pd.to_datetime)
+
         print(self.df.head())
 
         pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=llm)
@@ -369,7 +372,7 @@ class Model:
             yield token
 
     @web_endpoint()
-    def web_inference(self):
-        return StreamingResponse(self._inference(), media_type="text/event-stream")
+    def web_inference(self, prompt: str):
+        return StreamingResponse(self._inference(prompt=prompt), media_type="text/event-stream")
 
         # return Response(content="Hello, world!").getvalue(), 200
