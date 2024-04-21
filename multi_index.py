@@ -41,6 +41,8 @@ from pinecone import Pinecone, ServerlessSpec
 from getpass import getpass
 import sys
 import os
+
+#TODO: Take secrets from Modal
 if ("PINECONE_API_KEY" not in os.environ) and ("OPENAI_API_KEY" not in os.environ) and ("ANTHROPIC_API_KEY" not in os.environ):
   os.environ["PINECONE_API_KEY"] = getpass("Please enter your Pinecone API key: ")
   os.environ["OPENAI_API_KEY"] = getpass("Please enter your OpenAI API key: ")
