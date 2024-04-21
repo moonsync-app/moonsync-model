@@ -174,7 +174,7 @@ class Model:
             "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/data/biometric_data.csv"
         )
         self.df["date"] = self.df["date"].apply(pd.to_datetime)
-
+        self.df.rename(columns={"duration_in_bed_seconds_data": "duration_in_bed", "duration_deep_sleep": "deep_sleep_duration"}, inplace=True)
         print(self.df.head())
 
         pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=llm)
@@ -304,7 +304,7 @@ class Model:
                 "'date', 'recovery_score', 'activity_score', 'sleep_score',"
                 "'stress_data', 'number_steps', 'total_burned_calories',"
                 "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
-                "'duration_in_bed_seconds_data', 'duration_deep_sleep',"
+                "'duration_in_bed', 'deep_sleep_duration',"
                 "'temperature_delta'",
             ),
         )
