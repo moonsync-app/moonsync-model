@@ -15,7 +15,7 @@ from modal import (
 )
 
 from fastapi.responses import StreamingResponse
-
+from typing import Dict
 
 moonsync_image = (
     Image.debian_slim(python_version="3.10")
@@ -71,6 +71,7 @@ app = App("moonsync-modal-app")
     container_idle_timeout=240,
     image=moonsync_image,
     secrets=[Secret.from_name("moonsync-secret")],
+    keep_warm=2
 )
 class Model:
     @build()
@@ -92,7 +93,7 @@ class Model:
         from llama_index.llms.openai import OpenAI
         from llama_index.core import VectorStoreIndex
         from llama_index.vector_stores.pinecone import PineconeVectorStore
-        from llama_index.core.prompts import ChatPromptTemplate, SelectorPromptTemplate
+        from llama_index.core.prompts import ChatPromptTemplate, SelectorPromptTemplate, PromptType
         from llama_index.core.indices import EmptyIndex
         from llama_index.core import get_response_synthesizer
         from llama_index.core.query_engine import RouterQueryEngine, SubQuestionQueryEngine
@@ -180,7 +181,26 @@ class Model:
         self.df.rename(columns={"duration_in_bed_seconds_data": "duration_in_bed", "duration_deep_sleep": "deep_sleep_duration"}, inplace=True)
         print(self.df.head())
 
-        pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=llm)
+
+        # Pandas Query Engine
+        
+        DEFAULT_PANDAS_TMPL = (
+            "You are working with a pandas dataframe in Python.\n"
+            "The name of the dataframe is `df`.\n"
+            "This is the result of `print(df.head())`:\n"
+            "{df_str}\n\n"
+            "Follow these instructions:\n"
+            "{instruction_str}\n"
+            "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta\n"
+            "Query: {query_str}\n\n"
+            "Expression:"
+        )
+
+        DEFAULT_PANDAS_PROMPT = PromptTemplate(
+            DEFAULT_PANDAS_TMPL, prompt_type=PromptType.PANDAS
+        )
+
+        pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=llm, pandas_prompt=DEFAULT_PANDAS_PROMPT)
 
         SYSTEM_PROMPT = ("You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
         "When answering questions, always be empathetic, understanding, and provide the most accurate and helpful information possible. If a question requires expertise beyond your knowledge, recommend that the user consult with a healthcare professional."  
@@ -188,7 +208,7 @@ class Model:
         1. Acknowledge the user's concerns and validate their experiences.
         2. Provide evidence-based information and practical advice tailored to the user's specific situation.
         3. Encourage open communication and offer to follow up on the user's progress.
-        4. Promote a holistic approach to health, considering the user's menstrual cycle, exercise habits, and dietary preferences.
+        4. Ask follow up questions if you want more information from the user. 
         5. Include the biometric data and provide the user with explicit values and summary of any values"""
         "\n\nExamples below show the way you should approach the conversation."
         "\n---------------------\n"
@@ -346,7 +366,7 @@ class Model:
         * The sub questions should be answerable by the tools provided
         * You can generate multiple sub questions for each tool
         * Tools must be specified by their name, not their description
-        * You don't need to use a tool if you don't think it's relevant
+        * You must not use a tool if you don't think it's relevant
         * You must ignore the system message in the chat history when generating the sub questions.
 
         Output the list of sub questions by calling the SubQuestionList function.
@@ -415,18 +435,20 @@ class Model:
             query_engine=sub_question_query_engine,
             llm=llm,
             condense_question_prompt=custom_prompt_forward_history,
-            chat_history=chat_history
+            chat_history=chat_history,
+            verbose=True
         )
 
     def _inference(self, prompt: str):
+        print("Prompt: ", prompt)
         streaming_response = self.chat_engine.stream_chat(
             prompt
         )
         for token in streaming_response.response_gen:
             yield token
 
-    @web_endpoint()
-    def web_inference(self, prompt: str):
-        return StreamingResponse(self._inference(prompt=prompt), media_type="text/event-stream")
+    @web_endpoint(method="POST")
+    def web_inference(self, item: Dict):
+        return StreamingResponse(self._inference(prompt=item['prompt']), media_type="text/event-stream")
 
         # return Response(content="Hello, world!").getvalue(), 200
