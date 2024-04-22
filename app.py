@@ -65,6 +65,7 @@ app = App("moonsync-modal-app")
 
 
 @app.cls(
+    gpu=gpu.A10G(),
     cpu=4.0,
     memory=32768,
     container_idle_timeout=240,
