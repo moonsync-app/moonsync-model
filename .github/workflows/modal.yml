@@ -10,8 +10,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MODAL_TOKEN_ID: ${{ secrets.SUGAM_MODAL_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.SUGAM_MODAL_SECRET }}
 
     steps:
       - uses: actions/checkout@v4
