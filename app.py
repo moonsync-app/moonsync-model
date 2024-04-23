@@ -159,6 +159,7 @@ class Model:
         ) = query_engines
         empty_query_engine = EmptyIndex().as_query_engine()
 
+        # probably can mounted as modal volume
         self.df = pd.read_csv(
             "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/data/biometric_data.csv"
         )
