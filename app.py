@@ -120,7 +120,11 @@ class Model:
         import pandas as pd
         from fastapi import Response
         from llama_index.question_gen.openai import OpenAIQuestionGenerator
-
+        from llama_index.core.indices.empty.retrievers import EmptyIndexRetriever
+        from llama_index.core.response_synthesizers import BaseSynthesizer
+        from llama_index.core.query_engine import CustomQueryEngine
+        from typing import List
+        
         # Load phoenix for tracing
         # session = px.launch_app()
         # set_global_handler("arize_phoenix")
@@ -129,8 +133,10 @@ class Model:
         pc = Pinecone(api_key=api_key)
 
         # LLM Model
-        llm = OpenAI(model="gpt-4-turbo", temperature=0)
-        Settings.llm = llm
+        self.llm = OpenAI(model="gpt-4-turbo", temperature=0)
+        # pplx_llm = OpenAI(api_key=os.environ["PPLX_API_KEY"], api_base="https://api.perplexity.ai", model="sonar-small-online")
+
+        Settings.llm = self.llm
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
@@ -201,9 +207,37 @@ class Model:
             DEFAULT_PANDAS_TMPL, prompt_type=PromptType.PANDAS
         )
 
-        pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=llm, pandas_prompt=DEFAULT_PANDAS_PROMPT)
+        pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT)
+        
+        # # Online PPLX Query Engine
+        # empty_index_retriever = EmptyIndexRetriever(index=EmptyIndex())
+        
+        # pplx_prompt = PromptTemplate(
+        #     "Query: {query_str}\n"
+        #     "Answer: "
+        # )
+        
+        # class PPLXOnlineQueryEngine(CustomQueryEngine):
+        #     retriever: BaseRetriever
+        #     response_synthesizer: BaseSynthesizer
+        #     pplx: OpenAI
+        #     qa_prompt: PromptTemplate
 
-        SYSTEM_PROMPT = ("You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
+        #     def custom_query(self, query_str: str):
+        #         response = self.pplx.complete(
+        #             pplx_prompt.format(query_str=query_str)
+        #         )
+
+        #         return str(response)
+            
+
+        # synthesizer = get_response_synthesizer(response_mode="generation")
+        # pplx_query_engine = PPLXOnlineQueryEngine(
+        #     retriever=empty_index_retriever, response_synthesizer=synthesizer, pplx=pplx_llm, qa_prompt=pplx_prompt
+        # )
+
+
+        self.SYSTEM_PROMPT = ("You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
         "When answering questions, always be empathetic, understanding, and provide the most accurate and helpful information possible. If a question requires expertise beyond your knowledge, recommend that the user consult with a healthcare professional."  
         """Use the following guidelines to structure your responses:
         1. Acknowledge the user's concerns and validate their experiences.
@@ -337,6 +371,14 @@ class Model:
                 "'temperature_delta'",
             ),
         )
+        
+        # online_tool = QueryEngineTool(
+        #     query_engine=pplx_query_engine,
+        #     metadata=ToolMetadata(
+        #         name="internet",
+        #         description="Use this to get relevant information from the internet",
+        #     ),
+        # )
 
         router_query_engine = RouterQueryEngine(
             selector=LLMMultiSelector.from_defaults(),
@@ -347,7 +389,7 @@ class Model:
                 fitness_wellness_tool,
                 default_tool,
             ],
-            llm=llm,
+            llm=self.llm,
             # response_synthesizer=respose_synthesizer,
         )
         
@@ -383,7 +425,7 @@ class Model:
 
         question_gen = OpenAIQuestionGenerator.from_defaults(prompt_template_str=SUB_QUESTION_PROMPT_TMPL)
 
-        sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
+        self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
             query_engine_tools=[
                 mood_feeling_tool,
                 diet_nutrition_tool,
@@ -392,7 +434,7 @@ class Model:
                 default_tool,
                 biometric_tool,
             ],
-            llm=llm,
+            llm=self.llm,
             response_synthesizer=response_synthesizer,
             question_gen=question_gen
         )
@@ -415,7 +457,7 @@ class Model:
             <Standalone question>
         """)
         
-        custom_prompt_forward_history = PromptTemplate(
+        self.custom_prompt_forward_history = PromptTemplate(
             """\
             Just copy the chat history as is, inside the tag <Chat History> and copy the follow up message inside the tag <Follow Up Message> 
             
@@ -428,20 +470,67 @@ class Model:
             """
         )
 
-        chat_history = [
-            ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
+        self.chat_history = [
+            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
         ]
+        
+        class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
+            def _condense_question(self, chat_history: List[ChatMessage], last_message: str) -> str:
+                chat_str = "<Chat History>\n"
+                
+                for message in chat_history:
+                    role = message.role
+                    content = message.content
+                    chat_str += f"{role}: {content}\n"
+                    
+                    chat_str += "<Follow Up Message>\n"
+                    chat_str += last_message
+                
+                return chat_str
 
-        self.chat_engine = CondenseQuestionChatEngine.from_defaults(
-            query_engine=sub_question_query_engine,
-            llm=llm,
-            condense_question_prompt=custom_prompt_forward_history,
-            chat_history=chat_history,
+        self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
+            query_engine=self.sub_question_query_engine,
+            llm=self.llm,
+            condense_question_prompt=self.custom_prompt_forward_history,
+            chat_history=self.chat_history,
             verbose=True
         )
 
-    def _inference(self, prompt: str):
+    def _inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
+        from llama_index.core.llms import ChatMessage, MessageRole
+        from llama_index.core.chat_engine import CondenseQuestionChatEngine
+        from typing import List
+        class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
+            def _condense_question(self, chat_history: List[ChatMessage], last_message: str) -> str:
+                chat_str = "<Chat History>\n"
+                
+                for message in chat_history:
+                    role = message.role
+                    content = message.content
+                    chat_str += f"{role}: {content}\n"
+                    
+                    chat_str += "<Follow Up Message>\n"
+                    chat_str += last_message
+                
+                return chat_str
+        
+        print(messages) #role and content
+        if len(messages) > 0:
+            self.chat_engine.reset()
+            curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT)]
+            for message in messages:
+                role = message['role']
+                content = message['content']
+                curr_history.append(ChatMessage(role=role, content=content))
+                
+            self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
+                query_engine=self.sub_question_query_engine,
+                llm=self.llm,
+                condense_question_prompt=self.custom_prompt_forward_history,
+                chat_history=curr_history,
+                verbose=True
+            )
         streaming_response = self.chat_engine.stream_chat(
             prompt
         )
@@ -450,7 +539,4 @@ class Model:
 
     @web_endpoint(method="POST")
     def web_inference(self, item: Dict):
-        print(item['messages'])
-        return StreamingResponse(self._inference(prompt=item['prompt']), media_type="text/event-stream")
-
-        # return Response(content="Hello, world!").getvalue(), 200
+        return StreamingResponse(self._inference(prompt=item['prompt'], messages = item['messages']), media_type="text/event-stream")
