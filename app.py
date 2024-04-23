@@ -22,7 +22,6 @@ moonsync_image = (
     .apt_install(
         "libglib2.0-0", "libsm6", "libxrender1", "libxext6", "ffmpeg", "libgl1"
     )
-    # TODO: add llama-index, pinecone dependencies
     .pip_install(
         "arize-phoenix[evals]~=3.22.0",
         "gcsfs~=2024.3.1",
@@ -42,29 +41,10 @@ moonsync_image = (
         "pandas~=2.2.1",
         "terra-python~=0.0.12",
         "llama-index-llms-perplexity~=0.1.3"
-        # "arize-phoenix~=3.22.0",
     )
 )
 
 app = App("moonsync-modal-app")
-
-# with moonsync_image.imports():
-
-
-# ## Load model and run inference
-#
-# The container lifecycle [`@enter` decorator](https://modal.com/docs/guide/lifecycle-functions#container-lifecycle-beta)
-# loads the model at startup. Then, we evaluate it in the `run_inference` function.
-#
-# To avoid excessive cold-starts, we set the idle timeout to 240 seconds, meaning once a GPU has loaded the model it will stay
-# online for 4 minutes before spinning down. This can be adjusted for cost/experience trade-offs.
-
-# .env
-# PINECONE_API_KEY=your_pinecone_api_key
-# OPENAI_API_KEY=your_openai_api_key
-# TERRA_API_KEY=your_terra_api_key
-# ANTHROPIC_API_KEY=your_anthropic_api_key
-
 
 @app.cls(
     gpu=gpu.A10G(),
@@ -82,7 +62,6 @@ class Model:
 
     @enter()
     def enter(self):
-        # import phoenix as px
         from llama_index.core import (
             set_global_handler,
         )
@@ -127,9 +106,6 @@ class Model:
         from typing import List
         from llama_index.llms.perplexity import Perplexity
 
-        # Load phoenix for tracing
-        # session = px.launch_app()
-        # set_global_handler("arize_phoenix")
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
         pc = Pinecone(api_key=api_key)
@@ -137,7 +113,7 @@ class Model:
         # LLM Model
         self.llm = OpenAI(model="gpt-4-turbo", temperature=0)
         self.pplx_llm = Perplexity(api_key=os.environ["PPLX_API_KEY"], model="sonar-small-online", temperature=0.5)
-        
+
         Settings.llm = self.llm
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
@@ -192,7 +168,7 @@ class Model:
 
 
         # Pandas Query Engine
-        
+
         DEFAULT_PANDAS_TMPL = (
             "You are working with a pandas dataframe in Python.\n"
             "The name of the dataframe is `df`.\n"
@@ -210,15 +186,15 @@ class Model:
         )
 
         pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT)
-        
+
         # # Online PPLX Query Engine
         # empty_index_retriever = EmptyIndexRetriever(index=EmptyIndex())
-        
+
         # pplx_prompt = PromptTemplate(
         #     "Query: {query_str}\n"
         #     "Answer: "
         # )
-        
+
         # class PPLXOnlineQueryEngine(CustomQueryEngine):
         #     retriever: BaseRetriever
         #     response_synthesizer: BaseSynthesizer
@@ -231,7 +207,7 @@ class Model:
         #         )
 
         #         return str(response)
-            
+
 
         # synthesizer = get_response_synthesizer(response_mode="generation")
         # pplx_query_engine = PPLXOnlineQueryEngine(
@@ -240,12 +216,12 @@ class Model:
 
 
         self.SYSTEM_PROMPT = ("You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, feelings, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
-        "When answering questions, always be empathetic, understanding, and provide the most accurate and helpful information possible. If a question requires expertise beyond your knowledge, recommend that the user consult with a healthcare professional."  
+        "When answering questions, always be empathetic, understanding, and provide the most accurate and helpful information possible. If a question requires expertise beyond your knowledge, recommend that the user consult with a healthcare professional."
         """\nUse the following guidelines to structure your responses:
         1. Acknowledge the user's concerns and validate their experiences.
         2. Provide evidence-based information and practical advice tailored to the user's specific situation.
         3. Encourage open communication and offer to follow up on the user's progress.
-        4. Ask follow up questions if you want more information from the user. 
+        4. Ask follow up questions if you want more information from the user.
         5. Include the biometric data and provide the user with explicit values and summary of any values"""
         "\n\nExamples below show the way you should approach the conversation."
         "\n---------------------\n"
@@ -259,8 +235,8 @@ class Model:
         "\n---------------------\n"
         "Important: When answering questions based on the context provided from documentation, do not disclose that you are sourcing information from documentation, just begin response."
         "Important Note : Always answer in first person and answer like you are the user's friend"
-        "\n---------------------\n"            
-        ) 
+        "\n---------------------\n"
+        )
         SYSTEM_PROMPT_ENTIRE_CHAT = (
             "Remember you are MoonSync. Use the Chat History and the Context to generate a concise answer for the user's Follow Up Message.\n"
             "Important Note: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines."
@@ -373,7 +349,7 @@ class Model:
                 "'temperature_delta'",
             ),
         )
-        
+
         # online_tool = QueryEngineTool(
         #     query_engine=pplx_query_engine,
         #     metadata=ToolMetadata(
@@ -394,7 +370,7 @@ class Model:
             llm=self.llm,
             # response_synthesizer=respose_synthesizer,
         )
-        
+
         SUB_QUESTION_PROMPT_TMPL = """\
         You are a world class state of the art agent.
 
@@ -458,11 +434,11 @@ class Model:
 
             <Standalone question>
         """)
-        
+
         self.custom_prompt_forward_history = PromptTemplate(
             """\
-            Just copy the chat history as is, inside the tag <Chat History> and copy the follow up message inside the tag <Follow Up Message> 
-            
+            Just copy the chat history as is, inside the tag <Chat History> and copy the follow up message inside the tag <Follow Up Message>
+
             <Chat History>
             {chat_history}
 
@@ -475,19 +451,19 @@ class Model:
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
         ]
-        
+
         class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
             def _condense_question(self, chat_history: List[ChatMessage], last_message: str) -> str:
                 chat_str = "<Chat History>\n"
-                
+
                 for message in chat_history:
                     role = message.role
                     content = message.content
                     chat_str += f"{role}: {content}\n"
-                    
+
                     chat_str += "<Follow Up Message>\n"
                     chat_str += last_message
-                
+
                 return chat_str
 
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
@@ -506,17 +482,17 @@ class Model:
         class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
             def _condense_question(self, chat_history: List[ChatMessage], last_message: str) -> str:
                 chat_str = "<Chat History>\n"
-                
+
                 for message in chat_history:
                     role = message.role
                     content = message.content
                     chat_str += f"{role}: {content}\n"
-                    
+
                     chat_str += "<Follow Up Message>\n"
                     chat_str += last_message
-                
+
                 return chat_str
-        
+
         print(messages) #role and content
         if len(messages) > 0:
             self.chat_engine.reset()
@@ -525,7 +501,7 @@ class Model:
                 role = message['role']
                 content = message['content']
                 curr_history.append(ChatMessage(role=role, content=content))
-                
+
             self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
                 query_engine=self.sub_question_query_engine,
                 llm=self.llm,
@@ -545,24 +521,24 @@ class Model:
         from llama_index.core.llms import ChatMessage, MessageRole
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
-        
+
         curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT)]
         for message in messages:
             role = message['role']
             content = message['content']
             curr_history.append(ChatMessage(role=role, content=content))
-            
+
         curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt))
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
-        
+
     @web_endpoint(method="POST")
     def web_inference(self, item: Dict):
         prompt = item['prompt']
         messages = item['messages']
-        
+
         if "@internet" in prompt:
             return StreamingResponse(self._online_inference(prompt = prompt, messages = messages), media_type="text/event-stream")
-        
+
         return StreamingResponse(self._inference(prompt = prompt, messages = messages), media_type="text/event-stream")
