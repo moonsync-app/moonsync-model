@@ -40,7 +40,8 @@ moonsync_image = (
         "requests~=2.31.0",
         "fastapi~=0.68.1",
         "pandas~=2.2.1",
-        "terra-python~=0.0.12"
+        "terra-python~=0.0.12",
+        "llama-index-llms-perplexity~=0.1.3"
         # "arize-phoenix~=3.22.0",
     )
 )
@@ -124,7 +125,8 @@ class Model:
         from llama_index.core.response_synthesizers import BaseSynthesizer
         from llama_index.core.query_engine import CustomQueryEngine
         from typing import List
-        
+        from llama_index.llms.perplexity import Perplexity
+
         # Load phoenix for tracing
         # session = px.launch_app()
         # set_global_handler("arize_phoenix")
@@ -134,8 +136,8 @@ class Model:
 
         # LLM Model
         self.llm = OpenAI(model="gpt-4-turbo", temperature=0)
-        # pplx_llm = OpenAI(api_key=os.environ["PPLX_API_KEY"], api_base="https://api.perplexity.ai", model="sonar-small-online")
-
+        self.pplx_llm = Perplexity(api_key=os.environ["PPLX_API_KEY"], model="sonar-small-online", temperature=0.5)
+        
         Settings.llm = self.llm
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
@@ -257,11 +259,11 @@ class Model:
         "\n---------------------\n"
         "Important: When answering questions based on the context provided from documentation, do not disclose that you are sourcing information from documentation, just begin response."
         "Important Note : Always answer in first person and answer like you are the user's friend"
-        "Important Note: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines."
         "\n---------------------\n"            
         ) 
         SYSTEM_PROMPT_ENTIRE_CHAT = (
-            "Use the Chat History and the Context to generate a concise answer for the user's Follow Up Message"
+            "Remember you are MoonSync. Use the Chat History and the Context to generate a concise answer for the user's Follow Up Message.\n"
+            "Important Note: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines."
         )
 
         # Text QA Prompt
@@ -410,7 +412,7 @@ class Model:
         * You can generate multiple sub questions for each tool
         * Tools must be specified by their name, not their description
         * You must not use a tool if you don't think it's relevant
-        * You must ignore the system message in the chat history when generating the sub questions.
+        * Only use the text after the <Follow Up Message> tag to generate the sub questions
 
         Output the list of sub questions by calling the SubQuestionList function.
 
@@ -537,6 +539,30 @@ class Model:
         for token in streaming_response.response_gen:
             yield token
 
+    def _online_inference(self, prompt: str, messages):
+        print("Prompt: ", prompt)
+        from llama_index.core.llms import ChatMessage, MessageRole
+        from llama_index.core.chat_engine import CondenseQuestionChatEngine
+        from typing import List
+        
+        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT)]
+        for message in messages:
+            role = message['role']
+            content = message['content']
+            curr_history.append(ChatMessage(role=role, content=content))
+            
+        curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt))
+                
+        resp = self.pplx_llm.stream_chat(curr_history)
+        for r in resp:
+            yield r.delta
+        
     @web_endpoint(method="POST")
     def web_inference(self, item: Dict):
-        return StreamingResponse(self._inference(prompt=item['prompt'], messages = item['messages']), media_type="text/event-stream")
+        prompt = item['prompt']
+        messages = item['messages']
+        
+        if "@internet" in prompt:
+            return StreamingResponse(self._online_inference(prompt = prompt, messages = messages), media_type="text/event-stream")
+        
+        return StreamingResponse(self._inference(prompt = prompt, messages = messages), media_type="text/event-stream")
