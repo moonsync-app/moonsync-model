@@ -239,9 +239,9 @@ class Model:
         # )
 
 
-        self.SYSTEM_PROMPT = ("You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
+        self.SYSTEM_PROMPT = ("You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, feelings, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
         "When answering questions, always be empathetic, understanding, and provide the most accurate and helpful information possible. If a question requires expertise beyond your knowledge, recommend that the user consult with a healthcare professional."  
-        """Use the following guidelines to structure your responses:
+        """\nUse the following guidelines to structure your responses:
         1. Acknowledge the user's concerns and validate their experiences.
         2. Provide evidence-based information and practical advice tailored to the user's specific situation.
         3. Encourage open communication and offer to follow up on the user's progress.
@@ -536,6 +536,7 @@ class Model:
         streaming_response = self.chat_engine.stream_chat(
             prompt
         )
+        self.chat_engine.reset()
         for token in streaming_response.response_gen:
             yield token
 
@@ -552,7 +553,6 @@ class Model:
             curr_history.append(ChatMessage(role=role, content=content))
             
         curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt))
-                
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
