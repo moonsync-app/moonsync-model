@@ -40,6 +40,7 @@ moonsync_image = (
         "requests~=2.31.0",
         "fastapi~=0.68.1",
         "pandas~=2.2.1",
+        "terra-python~=0.0.12"
         # "arize-phoenix~=3.22.0",
     )
 )
@@ -449,6 +450,7 @@ class Model:
 
     @web_endpoint(method="POST")
     def web_inference(self, item: Dict):
+        print(item['messages'])
         return StreamingResponse(self._inference(prompt=item['prompt']), media_type="text/event-stream")
 
         # return Response(content="Hello, world!").getvalue(), 200
