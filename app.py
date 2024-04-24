@@ -547,6 +547,9 @@ class Model:
 
         print(f"City: {city}, Region: {region}, Country: {country}")
 
+        # concat message with geo info
+        messages.append({'role': 'SYSTEM', 'content': f"City: {city}, Region: {region}, Country: {country}"})
+
 
         if "@internet" in prompt:
             return StreamingResponse(self._online_inference(prompt = prompt, messages = messages), media_type="text/event-stream")
