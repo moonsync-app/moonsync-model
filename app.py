@@ -112,7 +112,7 @@ class Model:
         pc = Pinecone(api_key=api_key)
 
         # LLM Model
-        self.llm = OpenAI(model="gpt-4-turbo", temperature=0)
+        self.llm = OpenAI(model="gpt-4-turbo", temperature=0.2)
         self.pplx_llm = Perplexity(api_key=os.environ["PPLX_API_KEY"], model="sonar-small-online", temperature=0.5)
 
         Settings.llm = self.llm
@@ -228,9 +228,12 @@ class Model:
         1. Acknowledge the user's concerns and validate their experiences.
         2. Provide evidence-based information and practical advice tailored to the user's specific situation.
         3. Encourage open communication and offer to follow up on the user's progress.
-        4. Ask follow up questions if you want more information from the user.
-        5. Include the biometric data and provide the user with explicit values and summary of any values"""
+        4. Ask follow up questions to get more information from the user.
+        5. Include the biometric data and provide the user with explicit values and summary of any values
+        6. Answer the query in a natural, friendly, encouraging and human-like manner.
+        7. When answering questions based on the context provided, do not disclose that you are refering to context, just begin response."""
         "\n\nExamples below show the way you should approach the conversation."
+
         "\n---------------------\n"
         "Example 1:\n"
         "Ashley: During PMS, my stomach gets upset easily, is there anything I can do to help?"
@@ -238,15 +241,11 @@ class Model:
         "\n---------------------\n"
         "Example 2:\n"
         "Ashely: I am preparing for a marathon and need to do some high intensity sprinting workouts as well as longer lower intensity runs. What’s the best way to plan this with my cycle?"
-        "MoonSync: Hey Ashley, happy you asked! I’ll ask a few more details to get you on the best plan: when and how long is the marathon? How much are you running for your short and long trainings right now?"
-        "\n---------------------\n"
-        "Important: When answering questions based on the context provided from documentation, do not disclose that you are sourcing information from documentation, just begin response."
-        "Important Note : Always answer in first person and answer like you are the user's friend"
-        "\n---------------------\n"
+        "MoonSync: Hey Ashley, happy you asked! I’ll ask a few more details to get you on the best plan: when and how long is the marathon? How much are you running for your short and long trainings right now?\n\n"
         )
         SYSTEM_PROMPT_ENTIRE_CHAT = (
             "Remember you are MoonSync. Use the Chat History and the Context to generate a concise answer for the user's Follow Up Message.\n"
-            "Important Note: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines."
+            "Important Note: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines.\n"
         )
 
         # Text QA Prompt
@@ -348,7 +347,7 @@ class Model:
             query_engine=pandas_query_engine,
             metadata=ToolMetadata(
                 name="biometrics",
-                description="Use this to get relevant biometric data relevant to the query. The columns are - "
+                description="Use this to get relevant biometric data relevant to the query. Always get the user's menstrual_phase. The columns are - "
                 "'date', 'recovery_score', 'activity_score', 'sleep_score',"
                 "'stress_data', 'number_steps', 'total_burned_calories',"
                 "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
@@ -393,6 +392,7 @@ class Model:
         * The sub questions should be relevant to the user question
         * The sub questions should be answerable by the tools provided
         * You can generate multiple sub questions for each tool
+        * Always use the 'biometrics' tool to get the user's menstrual phase
         * Tools must be specified by their name, not their description
         * You must not use a tool if you don't think it's relevant
         * Only use the text after the <Follow Up Message> tag to generate the sub questions
@@ -468,8 +468,8 @@ class Model:
                     content = message.content
                     chat_str += f"{role}: {content}\n"
 
-                    chat_str += "<Follow Up Message>\n"
-                    chat_str += last_message
+                chat_str += "<Follow Up Message>\n"
+                chat_str += last_message
 
                 return chat_str
 
@@ -495,8 +495,8 @@ class Model:
                     content = message.content
                     chat_str += f"{role}: {content}\n"
 
-                    chat_str += "<Follow Up Message>\n"
-                    chat_str += last_message
+                chat_str += "<Follow Up Message>\n"
+                chat_str += last_message
 
                 return chat_str
 
@@ -520,6 +520,14 @@ class Model:
             prompt
         )
         self.chat_engine.reset()
+        self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
+            query_engine=self.sub_question_query_engine,
+            llm=self.llm,
+            condense_question_prompt=self.custom_prompt_forward_history,
+            chat_history=self.chat_history,
+            verbose=True
+        )
+        
         for token in streaming_response.response_gen:
             yield token
 
