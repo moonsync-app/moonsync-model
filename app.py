@@ -158,6 +158,11 @@ class Model:
             diet_nutrition_query_engine,
             fitness_wellness_query_engine,
         ) = query_engines
+        
+        self.mood_feeling_qe = mood_feeling_query_engine
+        self.diet_nutrition_qe = diet_nutrition_query_engine
+        self.fitness_wellness_qe = fitness_wellness_query_engine
+        
         empty_query_engine = EmptyIndex().as_query_engine()
 
         # probably can mounted as modal volume
@@ -552,3 +557,31 @@ class Model:
             return StreamingResponse(self._online_inference(prompt = prompt, messages = messages), media_type="text/event-stream")
 
         return StreamingResponse(self._inference(prompt = prompt, messages = messages), media_type="text/event-stream")
+    
+    
+    @web_endpoint(method="POST", label="dashboard")
+    def dashboard_details(self, item: Dict):
+        
+        #TODO read phase from dataframe
+        phase = self.df.iloc[-1]['menstrual_phase']
+        age = 35
+        mood_filler = "on how the user might be feeling today."
+        nutrition_filler = "on what the user needs to eat and suggest an interesting recipe."
+        exercise_filler = "on what exercises the user should perform today"
+        
+        PROMPT_TEMPLATE = """
+        Current Menstrual Phase: {phase}
+        Age: {age}
+
+        Based on the above menstrual phase and other details give me 3 points on separate lines (don't add index number) and nothing else {template}
+        Answer in a friendly way and in second person perspective.
+        """
+        
+        mood_resp = self.mood_feeling_qe.query(PROMPT_TEMPLATE.format(phase=phase, age=age, template=mood_filler)).response
+        nutrition_resp = self.diet_nutrition_qe.query(PROMPT_TEMPLATE.format(phase=phase, age=age, template=nutrition_filler)).response
+        exercise_resp = self.fitness_wellness_qe.query(PROMPT_TEMPLATE.format(phase=phase, age=age, template=exercise_filler)).response
+        
+        response_json = {'mood_resp': mood_resp, 'nutrition_resp': nutrition_resp, 'exercise_resp': exercise_resp}
+        return response_json
+        
+        
