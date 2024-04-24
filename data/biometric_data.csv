@@ -1,4 +1,4 @@
-date,recovery_score,activity_score,sleep_score,stress_data,number_steps,total_burned_calories,avg_saturation_percentage,avg_hr_bpm,resting_hr_bpm,duration_in_bed_seconds_data,duration_deep_sleep,temperature_delta,phase
+date,recovery_score,activity_score,sleep_score,stress_data,number_steps,total_burned_calories,avg_saturation_percentage,avg_hr_bpm,resting_hr_bpm,duration_in_bed_seconds_data,duration_deep_sleep,temperature_delta,menstrual_phase
 2024-03-22T08:02:54.000000-06:00,,,,,3250,1785,97.712,53.0,47,37735,3600,-0.04,Follicular
 2024-03-23T08:02:30.000000-06:00,81.0,,90.0,8100.0,2734,1776,97.559,53.625,48,36063,4590,-0.23,Follicular
 2024-03-24T07:20:13.000000-06:00,83.0,,92.0,900.0,1551,1656,97.934,62.5,50,34485,3300,0.14,Follicular
