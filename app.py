@@ -48,7 +48,7 @@ moonsync_image = (
 app = App("moonsync-modal-app")
 
 @app.cls(
-    gpu=gpu.A10G(),
+    # gpu=gpu.A10G(),
     cpu=4.0,
     memory=32768,
     container_idle_timeout=240,
@@ -560,20 +560,21 @@ class Model:
     
     
     @web_endpoint(method="POST", label="dashboard")
-    def dashboard_details(self, item: Dict):
+    def dashboard_details(self):
+        # prompt = item['test']
         
         #TODO read phase from dataframe
         phase = self.df.iloc[-1]['menstrual_phase']
         age = 35
-        mood_filler = "on how the user might be feeling today."
-        nutrition_filler = "on what the user needs to eat and suggest an interesting recipe."
+        mood_filler = "on how the user might be feeling today. one point should suggest a way to improve mood"
+        nutrition_filler = "on what the user needs to eat. one point should suggest an interesting recipe."
         exercise_filler = "on what exercises the user should perform today"
         
         PROMPT_TEMPLATE = """
         Current Menstrual Phase: {phase}
         Age: {age}
 
-        Based on the above menstrual phase and other details give me 3 points on separate lines (don't add index number) and nothing else {template}
+        Based on the above menstrual phase and other details give me 3 concise points on seperate lines (don't add index number) and nothing else {template}
         Answer in a friendly way and in second person perspective.
         """
         
