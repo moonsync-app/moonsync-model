@@ -14,6 +14,7 @@ from modal import (
     Secret,
 )
 
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 from typing import Dict
 
@@ -538,6 +539,14 @@ class Model:
     def web_inference(self, item: Dict):
         prompt = item['prompt']
         messages = item['messages']
+
+        # Get the headers
+        city = request.headers.get('x-vercel-ip-city', 'Unknown')
+        region = request.headers.get('x-vercel-ip-country-region', 'Unknown')
+        country = request.headers.get('x-vercel-ip-country', 'Unknown')
+
+        print(f"City: {city}, Region: {region}, Country: {country}")
+
 
         if "@internet" in prompt:
             return StreamingResponse(self._online_inference(prompt = prompt, messages = messages), media_type="text/event-stream")
