@@ -183,7 +183,7 @@ class Model:
             "{df_str}\n\n"
             "Follow these instructions:\n"
             "{instruction_str}\n"
-            "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta\n"
+            "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
             "Query: {query_str}\n\n"
             "Expression:"
         )
@@ -353,7 +353,7 @@ class Model:
                 "'stress_data', 'number_steps', 'total_burned_calories',"
                 "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
                 "'duration_in_bed', 'deep_sleep_duration',"
-                "'temperature_delta'",
+                "'temperature_delta', 'menstrual_phase'",
             ),
         )
 
