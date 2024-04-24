@@ -244,7 +244,7 @@ class Model:
         "MoonSync: Hey Ashley, happy you asked! I’ll ask a few more details to get you on the best plan: when and how long is the marathon? How much are you running for your short and long trainings right now?\n\n"
         )
         SYSTEM_PROMPT_ENTIRE_CHAT = (
-            "Remember you are MoonSync. Use the Chat History and the Context to generate a concise answer for the user's Follow Up Message.\n"
+            "Remember you are MoonSync. Use the Chat History and the Context to generate a detailed answer for the user's Follow Up Message.\n"
             "Important Note: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines.\n"
         )
 
@@ -347,6 +347,7 @@ class Model:
             query_engine=pandas_query_engine,
             metadata=ToolMetadata(
                 name="biometrics",
+                #TODO: make a decision to remove the phase from prompt
                 description="Use this to get relevant biometric data relevant to the query. Always get the user's menstrual_phase. The columns are - "
                 "'date', 'recovery_score', 'activity_score', 'sleep_score',"
                 "'stress_data', 'number_steps', 'total_burned_calories',"
@@ -457,6 +458,7 @@ class Model:
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
+            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']}")
         ]
 
         class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
@@ -500,10 +502,12 @@ class Model:
 
                 return chat_str
 
-        print(messages) #role and content
+        print('incoming messages', messages) #role and content
         if len(messages) > 0:
             self.chat_engine.reset()
-            curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT)]
+            curr_history = [
+            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
+            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']}")]
             for message in messages:
                 role = message['role']
                 content = message['content']
@@ -520,6 +524,10 @@ class Model:
             prompt
         )
         self.chat_engine.reset()
+        self.chat_history = [
+            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
+            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']}")
+        ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
             llm=self.llm,
