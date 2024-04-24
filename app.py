@@ -54,7 +54,7 @@ app = App("moonsync-modal-app")
     container_idle_timeout=240,
     image=moonsync_image,
     secrets=[Secret.from_name("moonsync-secret")],
-    keep_warm=2
+    keep_warm=1
 )
 class Model:
     @build()
@@ -585,4 +585,52 @@ class Model:
         response_json = {'mood_resp': mood_resp, 'nutrition_resp': nutrition_resp, 'exercise_resp': exercise_resp}
         return response_json
         
+        
+    def _get_weather(self):
+        import requests
+        import os
+        
+        api_key = os.environ["WEATHER_API_KEY"]
+        base_url = "http://api.weatherapi.com/v1/current.json"
+
+        params = {
+            "key": api_key,
+            "q": "New York City",
+            "aqi": "no"
+        }
+        
+        response = requests.get(base_url, params=params)
+
+        if response.status_code == 200:
+            data = response.json()
+            
+            location = data["location"]["name"]
+            temp_f = data["current"]["temp_f"]
+            condition = data["current"]["condition"]["text"]            
+            print(f"Location: {location}")  
+            print(f"Condition: {condition}")
+            print(f"Current temperature: {temp_f}°F")
+        else:
+            print("Error fetching weather data")
+            
+        return {"location": location, "condition": condition, "temp_f": temp_f}
+    
+    @web_endpoint(method="POST", label="biometrics")
+    def biometrics_details(self):        
+        #TODO read user id from body
+        
+        menstrual_phase = self.df.iloc[-1]['menstrual_phase']
+        sleep = self.df.iloc[-1]['duration_in_bed']
+        temperature = 98.6 + self.df.iloc[-1]['temperature_delta']
+        
+        m, s = divmod(sleep, 60)
+        hours, mins = divmod(m, 60)
+        
+        sleep = f"{hours} hours {mins} mins"
+        
+        weather_data = self._get_weather()
+        
+        response_json = {'menstrual_phase': menstrual_phase, 'sleep': sleep, 'body_temperature': round(temperature, 2)}
+        response_json.update(weather_data)
+        return response_json
         
