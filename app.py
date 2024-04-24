@@ -536,7 +536,7 @@ class Model:
             yield r.delta
 
     @web_endpoint(method="POST")
-    def web_inference(self, item: Dict):
+    def web_inference(self, request: Request, item: Dict):
         prompt = item['prompt']
         messages = item['messages']
 
