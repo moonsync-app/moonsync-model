@@ -219,7 +219,7 @@ class Model:
 
         # probably can mounted as modal volume
         self.df = pd.read_csv(
-            "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/data/biometric_data.csv"
+            "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/data/biometric_data_latest.csv"
         )
         self.df["date"] = self.df["date"].apply(pd.to_datetime)
         self.df.rename(
@@ -524,7 +524,7 @@ class Model:
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
             ChatMessage(
                 role=MessageRole.USER,
-                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday",
+                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday",
             ),
         ]
 
@@ -581,7 +581,7 @@ class Model:
                 ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
                 ChatMessage(
                     role=MessageRole.USER,
-                    content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday",
+                    content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday",
                 ),
             ]
             for message in messages:
@@ -602,7 +602,7 @@ class Model:
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
             ChatMessage(
                 role=MessageRole.USER,
-                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday",
+                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday",
             ),
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
@@ -624,7 +624,7 @@ class Model:
         from typing import List
 
         #TODO change current location
-        content_template = f"\nInformation about the user:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday \n Current Location: New York City"
+        content_template = f"\nInformation about the user:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday \n Current Location: New York City"
         curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT + content_template)]
         for message in messages:
             role = message["role"]
