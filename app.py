@@ -176,12 +176,18 @@ class Model:
 
         # Create Query Engines
         query_engines = []
+        dashboard_data_query_engines = []
         for vector_index in vector_indexes:
             query_engines.append(
                 vector_index.as_query_engine(
                     similarity_top_k=2,
                     text_qa_template=sources_prompt,
                     # refine_template=refine_template
+                )
+            )
+            dashboard_data_query_engines.append(
+                vector_index.as_query_engine(
+                    similarity_top_k=2,
                 )
             )
 
@@ -191,11 +197,8 @@ class Model:
             diet_nutrition_query_engine,
             fitness_wellness_query_engine,
         ) = query_engines
-        
-        self.mood_feeling_qe = mood_feeling_query_engine
-        self.diet_nutrition_qe = diet_nutrition_query_engine
-        self.fitness_wellness_qe = fitness_wellness_query_engine
-        
+           
+        self.mood_feeling_qe, _, self.diet_nutrition_qe, self.fitness_wellness_qe = dashboard_data_query_engines        
         empty_query_engine = EmptyIndex().as_query_engine()
 
         # probably can mounted as modal volume
