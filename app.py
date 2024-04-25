@@ -618,18 +618,14 @@ class Model:
 
     def _online_inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
+        prompt = prompt.replace("@internet", "")
         from llama_index.core.llms import ChatMessage, MessageRole
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
 
-        # TODO change current location
-        curr_history = [
-            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(
-                role=MessageRole.USER,
-                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday \n Current Location: New York City",
-            ),
-        ]
+        #TODO change current location
+        content_template = f"\nInformation about the user:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday \n Current Location: New York City"
+        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT + content_template)]
         for message in messages:
             role = message["role"]
             content = message["content"]
