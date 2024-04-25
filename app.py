@@ -55,7 +55,6 @@ app = App("moonsync-modal-app")
     container_idle_timeout=240,
     image=moonsync_image,
     secrets=[Secret.from_name("moonsync-secret")],
-    keep_warm=1,
 )
 class Model:
     @build()
