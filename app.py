@@ -55,6 +55,7 @@ app = App("moonsync-modal-app")
     container_idle_timeout=240,
     image=moonsync_image,
     secrets=[Secret.from_name("moonsync-secret")],
+    keep_warm=1,
 )
 class Model:
     @build()
@@ -635,7 +636,6 @@ class Model:
         for r in resp:
             yield r.delta
 
-    @app.function(keep_warm=1)
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
         prompt = item["prompt"]
@@ -659,7 +659,6 @@ class Model:
             media_type="text/event-stream",
         )
 
-    @app.function(keep_warm=1)
     @web_endpoint(method="POST", label="dashboard")
     def dashboard_details(self):
         # prompt = item['test']
@@ -721,7 +720,6 @@ class Model:
 
         return {"location": location, "condition": condition, "temp_f": temp_f}
 
-    @app.function(keep_warm=1)
     @web_endpoint(method="POST", label="biometrics")
     def biometrics_details(self):
         # TODO read user id from body
