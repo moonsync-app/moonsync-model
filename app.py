@@ -140,6 +140,39 @@ class Model:
                     PineconeVectorStore(pinecone_index=index)
                 )
             )
+            
+        # Update prompt to include sources
+        sources_qa_prompt = [
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=(
+                    "You are an expert Q&A system that is trusted around the world.\n"
+                    "Always answer the query using the provided context information with sources, "
+                    "and not prior knowledge.\n"
+                    "Some rules to follow:\n"
+                    "1. IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+                    "2. Never directly reference the given context in your answer.\n"
+                    "3. Avoid statements like 'Based on the context, ...' or "
+                    "'The context information ...' or anything along "
+                    "those lines."
+                )
+            ),
+            ChatMessage(
+                role=MessageRole.USER,
+                content=(
+                    "Context information is below.\n"
+                    "---------------------\n"
+                    "{context_str}\n"
+                    "---------------------\n"
+                    "Given the context information and not prior knowledge, "
+                    "answer the query.\n"
+                    "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+                    "Query: {query_str}\n"
+                    "Answer: "
+                ),
+            ),
+        ]
+        sources_prompt = ChatPromptTemplate(sources_qa_prompt)
 
         # Create Query Engines
         query_engines = []
@@ -147,7 +180,7 @@ class Model:
             query_engines.append(
                 vector_index.as_query_engine(
                     similarity_top_k=2,
-                    # text_qa_template=text_qa_template,
+                    text_qa_template=sources_prompt,
                     # refine_template=refine_template
                 )
             )
@@ -231,7 +264,8 @@ class Model:
         4. Ask follow up questions to get more information from the user.
         5. Include the biometric data and provide the user with explicit values and summary of any values
         6. Answer the query in a natural, friendly, encouraging and human-like manner.
-        7. When answering questions based on the context provided, do not disclose that you are refering to context, just begin response."""
+        7. When answering questions based on the context provided, do not disclose that you are refering to context, just begin response.
+        8. IMPORTANT - Always include the list of sources of the context in the your final answer\n"""
         "\n\nExamples below show the way you should approach the conversation."
 
         "\n---------------------\n"
@@ -245,7 +279,8 @@ class Model:
         )
         SYSTEM_PROMPT_ENTIRE_CHAT = (
             "Remember you are MoonSync. Use the Chat History and the Context to generate a detailed answer for the user's Follow Up Message.\n"
-            "Important Note: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines.\n"
+            "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+            "IMPORTANT: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines.\n"
         )
 
         # Text QA Prompt
@@ -263,6 +298,7 @@ class Model:
                     "---------------------\n"
                     "Given the context information and not prior knowledge, "
                     "answer the query.\n"
+                    "IMPORTANT: Include all the list of sources in the end of your final answer."
                     "Query: {query_str}\n"
                     "Answer: "
                 ),
@@ -281,11 +317,13 @@ class Model:
                     "2. **Repeat** the original answer if the new context isn't useful.\n"
                     "Never reference the original answer or context directly in your answer.\n"
                     "When in doubt, just repeat the original answer."
+                    "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
                 ),
             ),
             ChatMessage(
                 role=MessageRole.USER,
                 content=(
+                    "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
                     "New Context: {context_msg}\n"
                     "Query: {query_str}\n"
                     "Original Answer: {existing_answer}\n"
@@ -546,7 +584,10 @@ class Model:
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
 
-        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT)]
+        #TODO change current location
+        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT), 
+                        ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday \n Current Location: New York City")
+                        ]
         for message in messages:
             role = message['role']
             content = message['content']
