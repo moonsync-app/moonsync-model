@@ -458,7 +458,7 @@ class Model:
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Sunday")
+            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday")
         ]
 
         class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
@@ -507,7 +507,7 @@ class Model:
             self.chat_engine.reset()
             curr_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Sunday")
+            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday")
             ]
             for message in messages:
                 role = message['role']
@@ -527,7 +527,7 @@ class Model:
         self.chat_engine.reset()
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Sunday")
+            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday")
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
