@@ -41,11 +41,12 @@ moonsync_image = (
         "fastapi~=0.68.1",
         "pandas~=2.2.1",
         "terra-python~=0.0.12",
-        "llama-index-llms-perplexity~=0.1.3"
+        "llama-index-llms-perplexity~=0.1.3",
     )
 )
 
 app = App("moonsync-modal-app")
+
 
 @app.cls(
     # gpu=gpu.A10G(),
@@ -54,7 +55,7 @@ app = App("moonsync-modal-app")
     container_idle_timeout=240,
     image=moonsync_image,
     secrets=[Secret.from_name("moonsync-secret")],
-    keep_warm=1
+    keep_warm=1,
 )
 class Model:
     @build()
@@ -75,10 +76,17 @@ class Model:
         from llama_index.llms.openai import OpenAI
         from llama_index.core import VectorStoreIndex
         from llama_index.vector_stores.pinecone import PineconeVectorStore
-        from llama_index.core.prompts import ChatPromptTemplate, SelectorPromptTemplate, PromptType
+        from llama_index.core.prompts import (
+            ChatPromptTemplate,
+            SelectorPromptTemplate,
+            PromptType,
+        )
         from llama_index.core.indices import EmptyIndex
         from llama_index.core import get_response_synthesizer
-        from llama_index.core.query_engine import RouterQueryEngine, SubQuestionQueryEngine
+        from llama_index.core.query_engine import (
+            RouterQueryEngine,
+            SubQuestionQueryEngine,
+        )
         from llama_index.core.selectors import LLMSingleSelector, LLMMultiSelector
         from llama_index.core.selectors import (
             PydanticMultiSelector,
@@ -113,7 +121,11 @@ class Model:
 
         # LLM Model
         self.llm = OpenAI(model="gpt-4-turbo", temperature=0.2)
-        self.pplx_llm = Perplexity(api_key=os.environ["PPLX_API_KEY"], model="sonar-small-online", temperature=0.5)
+        self.pplx_llm = Perplexity(
+            api_key=os.environ["PPLX_API_KEY"],
+            model="sonar-small-online",
+            temperature=0.5,
+        )
 
         Settings.llm = self.llm
         # Pincone Indexes
@@ -140,7 +152,7 @@ class Model:
                     PineconeVectorStore(pinecone_index=index)
                 )
             )
-            
+
         # Update prompt to include sources
         sources_qa_prompt = [
             ChatMessage(
@@ -155,7 +167,7 @@ class Model:
                     "3. Avoid statements like 'Based on the context, ...' or "
                     "'The context information ...' or anything along "
                     "those lines."
-                )
+                ),
             ),
             ChatMessage(
                 role=MessageRole.USER,
@@ -197,10 +209,12 @@ class Model:
             diet_nutrition_query_engine,
             fitness_wellness_query_engine,
         ) = query_engines
-        
+
         # self.mood_feeling_qe, self.diet_nutrition_qe, self.fitness_wellness_qe = mood_feeling_query_engine, diet_nutrition_query_engine, fitness_wellness_query_engine
-        self.mood_feeling_qe, _, self.diet_nutrition_qe, self.fitness_wellness_qe = dashboard_data_query_engines      
-          
+        self.mood_feeling_qe, _, self.diet_nutrition_qe, self.fitness_wellness_qe = (
+            dashboard_data_query_engines
+        )
+
         empty_query_engine = EmptyIndex().as_query_engine()
 
         # probably can mounted as modal volume
@@ -208,9 +222,14 @@ class Model:
             "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/data/biometric_data.csv"
         )
         self.df["date"] = self.df["date"].apply(pd.to_datetime)
-        self.df.rename(columns={"duration_in_bed_seconds_data": "duration_in_bed", "duration_deep_sleep": "deep_sleep_duration"}, inplace=True)
+        self.df.rename(
+            columns={
+                "duration_in_bed_seconds_data": "duration_in_bed",
+                "duration_deep_sleep": "deep_sleep_duration",
+            },
+            inplace=True,
+        )
         print(self.df.head())
-
 
         # Pandas Query Engine
 
@@ -230,7 +249,9 @@ class Model:
             DEFAULT_PANDAS_TMPL, prompt_type=PromptType.PANDAS
         )
 
-        pandas_query_engine = PandasQueryEngine(df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT)
+        pandas_query_engine = PandasQueryEngine(
+            df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT
+        )
 
         # # Online PPLX Query Engine
         # empty_index_retriever = EmptyIndexRetriever(index=EmptyIndex())
@@ -253,16 +274,15 @@ class Model:
 
         #         return str(response)
 
-
         # synthesizer = get_response_synthesizer(response_mode="generation")
         # pplx_query_engine = PPLXOnlineQueryEngine(
         #     retriever=empty_index_retriever, response_synthesizer=synthesizer, pplx=pplx_llm, qa_prompt=pplx_prompt
         # )
 
-
-        self.SYSTEM_PROMPT = ("You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, feelings, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
-        "When answering questions, always be empathetic, understanding, and provide the most accurate and helpful information possible. If a question requires expertise beyond your knowledge, recommend that the user consult with a healthcare professional."
-        """\nUse the following guidelines to structure your responses:
+        self.SYSTEM_PROMPT = (
+            "You are MoonSync, an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, feelings, and diet. Your goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
+            "When answering questions, always be empathetic, understanding, and provide the most accurate and helpful information possible. If a question requires expertise beyond your knowledge, recommend that the user consult with a healthcare professional."
+            """\nUse the following guidelines to structure your responses:
         1. Acknowledge the user's concerns and validate their experiences.
         2. Provide evidence-based information and practical advice tailored to the user's specific situation.
         3. Encourage open communication and offer to follow up on the user's progress.
@@ -271,16 +291,15 @@ class Model:
         6. Answer the query in a natural, friendly, encouraging and human-like manner.
         7. When answering questions based on the context provided, do not disclose that you are refering to context, just begin response.
         8. IMPORTANT - Always include the list of sources of the context in the your final answer\n"""
-        "\n\nExamples below show the way you should approach the conversation."
-
-        "\n---------------------\n"
-        "Example 1:\n"
-        "Ashley: During PMS, my stomach gets upset easily, is there anything I can do to help?"
-        "MoonSync: Hey Ashley! Sorry to hear, a lot of women struggle with this. I would recommend seeing a professional, but we can experiment together with common solutions so you’re armed with info when you see a specialist. Research suggests that dairy and refined wheats can inflame the gut during the follicular phase. Try avoiding them this week and let’s check in at the end to see if it helped. Depending on the outcome, happy to give you more recommendations."
-        "\n---------------------\n"
-        "Example 2:\n"
-        "Ashely: I am preparing for a marathon and need to do some high intensity sprinting workouts as well as longer lower intensity runs. What’s the best way to plan this with my cycle?"
-        "MoonSync: Hey Ashley, happy you asked! I’ll ask a few more details to get you on the best plan: when and how long is the marathon? How much are you running for your short and long trainings right now?\n\n"
+            "\n\nExamples below show the way you should approach the conversation."
+            "\n---------------------\n"
+            "Example 1:\n"
+            "Ashley: During PMS, my stomach gets upset easily, is there anything I can do to help?"
+            "MoonSync: Hey Ashley! Sorry to hear, a lot of women struggle with this. I would recommend seeing a professional, but we can experiment together with common solutions so you’re armed with info when you see a specialist. Research suggests that dairy and refined wheats can inflame the gut during the follicular phase. Try avoiding them this week and let’s check in at the end to see if it helped. Depending on the outcome, happy to give you more recommendations."
+            "\n---------------------\n"
+            "Example 2:\n"
+            "Ashely: I am preparing for a marathon and need to do some high intensity sprinting workouts as well as longer lower intensity runs. What’s the best way to plan this with my cycle?"
+            "MoonSync: Hey Ashley, happy you asked! I’ll ask a few more details to get you on the best plan: when and how long is the marathon? How much are you running for your short and long trainings right now?\n\n"
         )
         SYSTEM_PROMPT_ENTIRE_CHAT = (
             "Remember you are MoonSync. Use the Chat History and the Context to generate a detailed answer for the user's Follow Up Message.\n"
@@ -390,7 +409,7 @@ class Model:
             query_engine=pandas_query_engine,
             metadata=ToolMetadata(
                 name="biometrics",
-                #TODO: make a decision to remove the phase from prompt
+                # TODO: make a decision to remove the phase from prompt
                 description="Use this to get relevant biometric data relevant to the query. Always get the user's menstrual_phase. The columns are - "
                 "'date', 'recovery_score', 'activity_score', 'sleep_score',"
                 "'stress_data', 'number_steps', 'total_burned_calories',"
@@ -452,7 +471,9 @@ class Model:
         {query_str}
         """
 
-        question_gen = OpenAIQuestionGenerator.from_defaults(prompt_template_str=SUB_QUESTION_PROMPT_TMPL)
+        question_gen = OpenAIQuestionGenerator.from_defaults(
+            prompt_template_str=SUB_QUESTION_PROMPT_TMPL
+        )
 
         self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
             query_engine_tools=[
@@ -465,7 +486,7 @@ class Model:
             ],
             llm=self.llm,
             response_synthesizer=response_synthesizer,
-            question_gen=question_gen
+            question_gen=question_gen,
         )
 
         # Configure chat engine
@@ -501,11 +522,16 @@ class Model:
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday")
+            ChatMessage(
+                role=MessageRole.USER,
+                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday",
+            ),
         ]
 
         class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
-            def _condense_question(self, chat_history: List[ChatMessage], last_message: str) -> str:
+            def _condense_question(
+                self, chat_history: List[ChatMessage], last_message: str
+            ) -> str:
                 chat_str = "<Chat History>\n"
 
                 for message in chat_history:
@@ -523,7 +549,7 @@ class Model:
             llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
-            verbose=True
+            verbose=True,
         )
 
     def _inference(self, prompt: str, messages):
@@ -531,8 +557,11 @@ class Model:
         from llama_index.core.llms import ChatMessage, MessageRole
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
+
         class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
-            def _condense_question(self, chat_history: List[ChatMessage], last_message: str) -> str:
+            def _condense_question(
+                self, chat_history: List[ChatMessage], last_message: str
+            ) -> str:
                 chat_str = "<Chat History>\n"
 
                 for message in chat_history:
@@ -545,16 +574,19 @@ class Model:
 
                 return chat_str
 
-        print('incoming messages', messages) #role and content
+        print("incoming messages", messages)  # role and content
         if len(messages) > 0:
             self.chat_engine.reset()
             curr_history = [
-            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday")
+                ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
+                ChatMessage(
+                    role=MessageRole.USER,
+                    content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday",
+                ),
             ]
             for message in messages:
-                role = message['role']
-                content = message['content']
+                role = message["role"]
+                content = message["content"]
                 curr_history.append(ChatMessage(role=role, content=content))
 
             self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
@@ -562,24 +594,25 @@ class Model:
                 llm=self.llm,
                 condense_question_prompt=self.custom_prompt_forward_history,
                 chat_history=curr_history,
-                verbose=True
+                verbose=True,
             )
-        streaming_response = self.chat_engine.stream_chat(
-            prompt
-        )
+        streaming_response = self.chat_engine.stream_chat(prompt)
         self.chat_engine.reset()
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday")
+            ChatMessage(
+                role=MessageRole.USER,
+                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday",
+            ),
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
             llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
-            verbose=True
+            verbose=True,
         )
-        
+
         for token in streaming_response.response_gen:
             yield token
 
@@ -589,13 +622,17 @@ class Model:
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
 
-        #TODO change current location
-        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT), 
-                        ChatMessage(role=MessageRole.USER, content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday \n Current Location: New York City")
-                        ]
+        # TODO change current location
+        curr_history = [
+            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
+            ChatMessage(
+                role=MessageRole.USER,
+                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Saturday \n Current Location: New York City",
+            ),
+        ]
         for message in messages:
-            role = message['role']
-            content = message['content']
+            role = message["role"]
+            content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
 
         curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt))
@@ -605,34 +642,38 @@ class Model:
 
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
-        prompt = item['prompt']
-        messages = item['messages']
+        prompt = item["prompt"]
+        messages = item["messages"]
 
         # Get the headers
-        city = request.headers.get('x-vercel-ip-city', 'Unknown')
-        region = request.headers.get('x-vercel-ip-country-region', 'Unknown')
-        country = request.headers.get('x-vercel-ip-country', 'Unknown')
+        city = request.headers.get("x-vercel-ip-city", "Unknown")
+        region = request.headers.get("x-vercel-ip-country-region", "Unknown")
+        country = request.headers.get("x-vercel-ip-country", "Unknown")
 
         print(f"City: {city}, Region: {region}, Country: {country}")
 
-
         if "@internet" in prompt:
-            return StreamingResponse(self._online_inference(prompt = prompt, messages = messages), media_type="text/event-stream")
+            return StreamingResponse(
+                self._online_inference(prompt=prompt, messages=messages),
+                media_type="text/event-stream",
+            )
 
-        return StreamingResponse(self._inference(prompt = prompt, messages = messages), media_type="text/event-stream")
-    
-    
+        return StreamingResponse(
+            self._inference(prompt=prompt, messages=messages),
+            media_type="text/event-stream",
+        )
+
     @web_endpoint(method="POST", label="dashboard")
     def dashboard_details(self):
         # prompt = item['test']
-        
-        #TODO read phase from dataframe
-        phase = self.df.iloc[-1]['menstrual_phase']
+
+        # TODO read phase from dataframe
+        phase = self.df.iloc[-1]["menstrual_phase"]
         age = 35
         mood_filler = "on how the user might be feeling today. one point should suggest a way to improve mood"
         nutrition_filler = "on what the user needs to eat. one point should suggest an interesting recipe."
         exercise_filler = "on what exercises the user should perform today"
-        
+
         PROMPT_TEMPLATE = """
         Current Menstrual Phase: {phase}
         Age: {age}
@@ -640,60 +681,68 @@ class Model:
         Based on the above menstrual phase and other details give me 3 concise points on seperate lines (don't add index number) and nothing else {template}
         Answer in a friendly way and in second person perspective.
         """
-        
-        mood_resp = self.mood_feeling_qe.query(PROMPT_TEMPLATE.format(phase=phase, age=age, template=mood_filler)).response
-        nutrition_resp = self.diet_nutrition_qe.query(PROMPT_TEMPLATE.format(phase=phase, age=age, template=nutrition_filler)).response
-        exercise_resp = self.fitness_wellness_qe.query(PROMPT_TEMPLATE.format(phase=phase, age=age, template=exercise_filler)).response
-        
-        response_json = {'mood_resp': mood_resp, 'nutrition_resp': nutrition_resp, 'exercise_resp': exercise_resp}
+
+        mood_resp = self.mood_feeling_qe.query(
+            PROMPT_TEMPLATE.format(phase=phase, age=age, template=mood_filler)
+        ).response
+        nutrition_resp = self.diet_nutrition_qe.query(
+            PROMPT_TEMPLATE.format(phase=phase, age=age, template=nutrition_filler)
+        ).response
+        exercise_resp = self.fitness_wellness_qe.query(
+            PROMPT_TEMPLATE.format(phase=phase, age=age, template=exercise_filler)
+        ).response
+
+        response_json = {
+            "mood_resp": mood_resp,
+            "nutrition_resp": nutrition_resp,
+            "exercise_resp": exercise_resp,
+        }
         return response_json
-        
-        
+
     def _get_weather(self):
         import requests
         import os
-        
+
         api_key = os.environ["WEATHER_API_KEY"]
         base_url = "http://api.weatherapi.com/v1/current.json"
 
-        params = {
-            "key": api_key,
-            "q": "New York City",
-            "aqi": "no"
-        }
-        
+        params = {"key": api_key, "q": "New York City", "aqi": "no"}
+
         response = requests.get(base_url, params=params)
 
         if response.status_code == 200:
             data = response.json()
-            
+
             location = data["location"]["name"]
             temp_f = data["current"]["temp_f"]
-            condition = data["current"]["condition"]["text"]            
-            print(f"Location: {location}")  
+            condition = data["current"]["condition"]["text"]
+            print(f"Location: {location}")
             print(f"Condition: {condition}")
             print(f"Current temperature: {temp_f}°F")
         else:
             print("Error fetching weather data")
-            
+
         return {"location": location, "condition": condition, "temp_f": temp_f}
-    
+
     @web_endpoint(method="POST", label="biometrics")
-    def biometrics_details(self):        
-        #TODO read user id from body
-        
-        menstrual_phase = self.df.iloc[-1]['menstrual_phase']
-        sleep = self.df.iloc[-1]['duration_in_bed']
-        temperature = 98.6 + self.df.iloc[-1]['temperature_delta']
-        
+    def biometrics_details(self):
+        # TODO read user id from body
+
+        menstrual_phase = self.df.iloc[-1]["menstrual_phase"]
+        sleep = self.df.iloc[-1]["duration_in_bed"]
+        temperature = 98.6 + self.df.iloc[-1]["temperature_delta"]
+
         m, s = divmod(sleep, 60)
         hours, mins = divmod(m, 60)
-        
+
         sleep = f"{hours} hours {mins} mins"
-        
+
         weather_data = self._get_weather()
-        
-        response_json = {'menstrual_phase': menstrual_phase, 'sleep': sleep, 'body_temperature': round(temperature, 2)}
+
+        response_json = {
+            "menstrual_phase": menstrual_phase,
+            "sleep": sleep,
+            "body_temperature": round(temperature, 2),
+        }
         response_json.update(weather_data)
         return response_json
-        
