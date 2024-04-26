@@ -12,6 +12,7 @@ from modal import (
     method,
     web_endpoint,
     Secret,
+    Volume,
 )
 
 from fastapi import Request
@@ -45,6 +46,9 @@ moonsync_image = (
         "llama-index-question-gen-guidance~=0.1.2",
     )
 )
+
+volume = Volume("moonsync")
+biometric_data_latest = volume.get("/data/biometric_data_latest.csv")
 
 app = App("moonsync-modal-app")
 
@@ -220,9 +224,7 @@ class Model:
         empty_query_engine = EmptyIndex().as_query_engine()
 
         # probably can mounted as modal volume
-        self.df = pd.read_csv(
-            "https://raw.githubusercontent.com/moonsync-app/moonsync-model/main/data/biometric_data_latest.csv"
-        )
+        self.df = pd.read_csv(biometric_data_latest)
         self.df["date"] = self.df["date"].apply(pd.to_datetime)
         self.df.rename(
             columns={
@@ -234,7 +236,7 @@ class Model:
         print(self.df.head())
 
         # Pandas Query Engine
-        #TODO update the date
+        # TODO update the date
         DEFAULT_PANDAS_TMPL = (
             "You are working with a pandas dataframe in Python.\n"
             "The name of the dataframe is `df`.\n"
@@ -524,7 +526,7 @@ class Model:
 
             """
         )
-        
+
         self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday \n Current Location: New York City"
 
         self.chat_history = [
@@ -558,7 +560,7 @@ class Model:
             chat_history=self.chat_history,
             verbose=True,
         )
-        
+
     def _inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
         from llama_index.core.llms import ChatMessage, MessageRole
@@ -630,8 +632,13 @@ class Model:
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
 
-        #TODO change current location
-        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT + self.content_template)]
+        # TODO change current location
+        curr_history = [
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=self.SYSTEM_PROMPT + self.content_template,
+            )
+        ]
         for message in messages:
             role = message["role"]
             content = message["content"]
