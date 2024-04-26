@@ -37,6 +37,7 @@ moonsync_image = (
         "terra-python~=0.0.12",
         "llama-index-llms-perplexity~=0.1.3",
         "llama-index-question-gen-guidance~=0.1.2",
+        "llama-index-tools-google",
     )
 )
 
@@ -553,7 +554,7 @@ class Model:
             chat_history=self.chat_history,
             verbose=True,
         )
-
+        
     def _inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
         from llama_index.core.llms import ChatMessage, MessageRole
@@ -639,7 +640,28 @@ class Model:
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
+            
+                
+    # Event schedule runner
+    def _event_schedule_runner(self, prompt: str, messages):
+        from llama_index.tools.google import GoogleCalendarToolSpec
+        from llama_index.agent.openai import OpenAIAgent
+        from llama_index.core.llms import ChatMessage, MessageRole
 
+        curr_history = []
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            curr_history.append(ChatMessage(role=role, content=content))
+            
+        tool_spec = GoogleCalendarToolSpec()
+        self.agent = OpenAIAgent.from_tools(tool_spec.to_tool_list(), verbose=True, llm=self.llm, chat_history=curr_history)
+        response = self.agent.stream_chat(prompt)
+        self.agent.reset()
+        response_gen = response.response_gen
+        for token in response_gen:
+            yield token
+        
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
         prompt = item["prompt"]
@@ -655,6 +677,12 @@ class Model:
         if "@internet" in prompt:
             return StreamingResponse(
                 self._online_inference(prompt=prompt, messages=messages),
+                media_type="text/event-stream",
+            )
+        
+        if "schedule" in prompt:
+            return StreamingResponse(
+                self._event_schedule_runner(prompt=prompt, messages=messages),
                 media_type="text/event-stream",
             )
 
