@@ -654,7 +654,7 @@ class Model:
             content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
             
-        # curr_history.append(ChatMessage(role=MessageRole.USER, content="The timezone is EST and the location is New York City."))            
+        curr_history.append(ChatMessage(role=MessageRole.USER, content="The timezone is EST and the location is New York City. If there are no attendees, please use a empty list for attendees."))            
         tool_spec = GoogleCalendarToolSpec()
         self.agent = OpenAIAgent.from_tools(tool_spec.to_tool_list(), verbose=True, llm=OpenAI(model="gpt-4-turbo", temperature=0), chat_history=curr_history)
         response = self.agent.stream_chat(prompt)
