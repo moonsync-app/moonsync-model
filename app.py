@@ -42,6 +42,7 @@ moonsync_image = (
         "pandas~=2.2.1",
         "terra-python~=0.0.12",
         "llama-index-llms-perplexity~=0.1.3",
+        "llama-index-question-gen-guidance~=0.1.2",
     )
 )
 
@@ -120,7 +121,8 @@ class Model:
         pc = Pinecone(api_key=api_key)
 
         # LLM Model
-        self.llm = OpenAI(model="gpt-4-turbo", temperature=0.2)
+        self.llm = OpenAI(model="gpt-4-turbo", temperature=0.1)
+        # self.llm = Anthropic(model="claude-3-opus-20240229", temperature=0)
         self.pplx_llm = Perplexity(
             api_key=os.environ["PPLX_API_KEY"],
             model="sonar-small-online",
@@ -162,7 +164,7 @@ class Model:
                     "Always answer the query using the provided context information with sources, "
                     "and not prior knowledge.\n"
                     "Some rules to follow:\n"
-                    "1. IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+                    "1. IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
                     "2. Never directly reference the given context in your answer.\n"
                     "3. Avoid statements like 'Based on the context, ...' or "
                     "'The context information ...' or anything along "
@@ -178,7 +180,7 @@ class Model:
                     "---------------------\n"
                     "Given the context information and not prior knowledge, "
                     "answer the query.\n"
-                    "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+                    "IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
                     "Query: {query_str}\n"
                     "Answer: "
                 ),
@@ -232,7 +234,7 @@ class Model:
         print(self.df.head())
 
         # Pandas Query Engine
-
+        #TODO update the date
         DEFAULT_PANDAS_TMPL = (
             "You are working with a pandas dataframe in Python.\n"
             "The name of the dataframe is `df`.\n"
@@ -241,6 +243,7 @@ class Model:
             "Follow these instructions:\n"
             "{instruction_str}\n"
             "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
+            "You only have data till 25th April 2024. Always use the past data to make future predictions\n"
             "Query: {query_str}\n\n"
             "Expression:"
         )
@@ -290,7 +293,7 @@ class Model:
         5. Include the biometric data and provide the user with explicit values and summary of any values
         6. Answer the query in a natural, friendly, encouraging and human-like manner.
         7. When answering questions based on the context provided, do not disclose that you are refering to context, just begin response.
-        8. IMPORTANT - Always include the list of sources of the context in the your final answer\n"""
+        8. IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"""
             "\n\nExamples below show the way you should approach the conversation."
             "\n---------------------\n"
             "Example 1:\n"
@@ -303,8 +306,10 @@ class Model:
         )
         SYSTEM_PROMPT_ENTIRE_CHAT = (
             "Remember you are MoonSync. Use the Chat History and the Context to generate a detailed answer for the user's Follow Up Message.\n"
-            "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+            "IMPORTANT - You are given the current menstrual phase, date, and location in the context. Use this information if relevant to the user's message\n"
+            "IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
             "IMPORTANT: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines.\n"
+            "IMPORTANT: Provide specific information and advice based on the context and user's message.\n"
         )
 
         # Text QA Prompt
@@ -322,7 +327,7 @@ class Model:
                     "---------------------\n"
                     "Given the context information and not prior knowledge, "
                     "answer the query.\n"
-                    "IMPORTANT: Include all the list of sources in the end of your final answer."
+                    "IMPORTANT: Include the list of sources of the context in the end of your final answer if you are using that information\n"
                     "Query: {query_str}\n"
                     "Answer: "
                 ),
@@ -341,13 +346,13 @@ class Model:
                     "2. **Repeat** the original answer if the new context isn't useful.\n"
                     "Never reference the original answer or context directly in your answer.\n"
                     "When in doubt, just repeat the original answer."
-                    "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+                    "IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
                 ),
             ),
             ChatMessage(
                 role=MessageRole.USER,
                 content=(
-                    "IMPORTANT - Always include the list of sources of the context in the your final answer\n"
+                    "IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
                     "New Context: {context_msg}\n"
                     "Query: {query_str}\n"
                     "Original Answer: {existing_answer}\n"
@@ -519,12 +524,14 @@ class Model:
 
             """
         )
+        
+        self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday \n Current Location: New York City"
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
             ChatMessage(
                 role=MessageRole.USER,
-                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday",
+                content=self.content_template,
             ),
         ]
 
@@ -551,7 +558,7 @@ class Model:
             chat_history=self.chat_history,
             verbose=True,
         )
-
+        
     def _inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
         from llama_index.core.llms import ChatMessage, MessageRole
@@ -581,7 +588,7 @@ class Model:
                 ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
                 ChatMessage(
                     role=MessageRole.USER,
-                    content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday",
+                    content=self.content_template,
                 ),
             ]
             for message in messages:
@@ -602,7 +609,7 @@ class Model:
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
             ChatMessage(
                 role=MessageRole.USER,
-                content=f"Current Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday",
+                content=self.content_template,
             ),
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
@@ -624,8 +631,7 @@ class Model:
         from typing import List
 
         #TODO change current location
-        content_template = f"\nInformation about the user:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday \n Current Location: New York City"
-        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT + content_template)]
+        curr_history = [ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT + self.content_template)]
         for message in messages:
             role = message["role"]
             content = message["content"]
