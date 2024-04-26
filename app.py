@@ -1,4 +1,3 @@
-
 from modal import (
     App,
     Image,
@@ -41,9 +40,7 @@ moonsync_image = (
     )
 )
 
-volume = Volume("moonsync")
-biometric_data_latest = volume.get("/data/biometric_data_latest.csv")
-token = volume.get("/google_credentials/token.json")  # for gcal integration
+moonsync_volume = Volume.from_name("moonsync")
 
 app = App("moonsync-modal-app")
 
@@ -55,6 +52,7 @@ app = App("moonsync-modal-app")
     container_idle_timeout=240,
     image=moonsync_image,
     secrets=[Secret.from_name("moonsync-secret")],
+    volumes={"/volumes/moonsync": moonsync_volume},
     keep_warm=1,
 )
 class Model:
@@ -198,6 +196,7 @@ class Model:
         empty_query_engine = EmptyIndex().as_query_engine()
 
         # probably can mounted as modal volume
+        biometric_data_latest = "/volumes/moonsync/data/biometric_data_latest.csv"
         self.df = pd.read_csv(biometric_data_latest)
         self.df["date"] = self.df["date"].apply(pd.to_datetime)
         self.df.rename(
