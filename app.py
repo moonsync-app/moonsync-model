@@ -64,6 +64,7 @@ class Model:
     def enter(self):
         from pinecone import Pinecone
         import os
+        import shutil
         from llama_index.core import Settings
         from llama_index.llms.openai import OpenAI
         from llama_index.core import VectorStoreIndex
@@ -231,6 +232,11 @@ class Model:
         pandas_query_engine = PandasQueryEngine(
             df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT
         )
+
+        # setup token.json for gcal
+        token_json = "/volumes/moonsync/google_credentials/token.json"
+        destination_path = "token.json"
+        shutil.move(token_json, destination_path)
 
         # # Online PPLX Query Engine
         # empty_index_retriever = EmptyIndexRetriever(index=EmptyIndex())
