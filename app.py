@@ -1,15 +1,9 @@
-import io
-from pathlib import Path
 
 from modal import (
     App,
     Image,
-    Mount,
-    asgi_app,
     build,
     enter,
-    gpu,
-    method,
     web_endpoint,
     Secret,
     Volume,
@@ -70,21 +64,14 @@ class Model:
 
     @enter()
     def enter(self):
-        from llama_index.core import (
-            set_global_handler,
-        )
-        from pinecone import Pinecone, ServerlessSpec
-        from getpass import getpass
-        import sys
+        from pinecone import Pinecone
         import os
         from llama_index.core import Settings
-        from llama_index.llms.anthropic import Anthropic
         from llama_index.llms.openai import OpenAI
         from llama_index.core import VectorStoreIndex
         from llama_index.vector_stores.pinecone import PineconeVectorStore
         from llama_index.core.prompts import (
             ChatPromptTemplate,
-            SelectorPromptTemplate,
             PromptType,
         )
         from llama_index.core.indices import EmptyIndex
@@ -93,31 +80,17 @@ class Model:
             RouterQueryEngine,
             SubQuestionQueryEngine,
         )
-        from llama_index.core.selectors import LLMSingleSelector, LLMMultiSelector
-        from llama_index.core.selectors import (
-            PydanticMultiSelector,
-            PydanticSingleSelector,
-        )
+        from llama_index.core.selectors import LLMMultiSelector
         from llama_index.core.tools import QueryEngineTool, ToolMetadata
-        from llama_index.core.chat_engine.context import ContextChatEngine
         from llama_index.core.chat_engine import (
             CondenseQuestionChatEngine,
-            CondensePlusContextChatEngine,
-            SimpleChatEngine,
         )
-        from llama_index.core.indices.base_retriever import BaseRetriever
         from llama_index.core.llms import ChatMessage, MessageRole
-        from llama_index.core.memory import BaseMemory
-        from llama_index.core.indices.service_context import ServiceContext
         from llama_index.core.memory import ChatMemoryBuffer
         from llama_index.core import PromptTemplate
         from llama_index.experimental.query_engine import PandasQueryEngine
         import pandas as pd
-        from fastapi import Response
         from llama_index.question_gen.openai import OpenAIQuestionGenerator
-        from llama_index.core.indices.empty.retrievers import EmptyIndexRetriever
-        from llama_index.core.response_synthesizers import BaseSynthesizer
-        from llama_index.core.query_engine import CustomQueryEngine
         from typing import List
         from llama_index.llms.perplexity import Perplexity
 
@@ -630,8 +603,6 @@ class Model:
         print("Prompt: ", prompt)
         prompt = prompt.replace("@internet", "")
         from llama_index.core.llms import ChatMessage, MessageRole
-        from llama_index.core.chat_engine import CondenseQuestionChatEngine
-        from typing import List
 
         # TODO change current location
         curr_history = [
