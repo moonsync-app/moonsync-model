@@ -37,7 +37,7 @@ moonsync_image = (
         "terra-python~=0.0.12",
         "llama-index-llms-perplexity~=0.1.3",
         "llama-index-question-gen-guidance~=0.1.2",
-        "llama-index-tools-google",
+        "llama-index-tools-google==0.1.3",
     )
 )
 
