@@ -91,6 +91,7 @@ class Model:
         from llama_index.question_gen.openai import OpenAIQuestionGenerator
         from typing import List
         from llama_index.llms.perplexity import Perplexity
+        from datetime import datetime
 
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
@@ -218,7 +219,7 @@ class Model:
             "Follow these instructions:\n"
             "{instruction_str}\n"
             "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
-            "You only have data till 25th April 2024. Always use the past data to make future predictions\n"
+            "You only have data till" +  str(self.df.iloc[-1]['date']) +" Always use the past data to make future predictions\n"            
             "Query: {query_str}\n\n"
             "Expression:"
         )
@@ -281,10 +282,13 @@ class Model:
         )
         SYSTEM_PROMPT_ENTIRE_CHAT = (
             "Remember you are MoonSync. Use the Chat History and the Context to generate a detailed answer for the user's Follow Up Message.\n"
-            "IMPORTANT - You are given the current menstrual phase, date, and location in the context. Use this information if relevant to the user's message\n"
-            "IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
-            "IMPORTANT: Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines.\n"
-            "IMPORTANT: Provide specific information and advice based on the context and user's message.\n"
+            "Important guidelines you need to follow:\n"
+            "You are given the current menstrual phase, date, and location in the context. Use this information if relevant to the user's message\n"
+            "Include the list of sources of the context in the end of your final answer if you are using that information\n"
+            "Avoid saying, 'As you mentioned', 'Based on the data provided' and anything along the same lines.\n"
+            "Provide specific information and advice based on the context and user's message.\n"
+            "If the users asks for a date or time, provide the exact dates and days and ask the user if she want to schedule the event in the end of your answer.\n"
+            ""
         )
 
         # Text QA Prompt
@@ -499,8 +503,18 @@ class Model:
 
             """
         )
-
-        self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: Thursday \n Current Location: New York City"
+        
+        
+        # Get the current date
+        timestamp = datetime.fromisoformat(str(self.df.iloc[-1]['date']))
+        self.current_date = timestamp.date()
+        print("Current date: ", self.current_date)
+        day_of_week = self.current_date.weekday()
+        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        self.day_name = day_names[day_of_week]
+        
+        
+        self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: ${self.day_name} \n Current Location: New York City"
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
