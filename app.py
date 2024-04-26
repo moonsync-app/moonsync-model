@@ -647,15 +647,16 @@ class Model:
         from llama_index.tools.google import GoogleCalendarToolSpec
         from llama_index.agent.openai import OpenAIAgent
         from llama_index.core.llms import ChatMessage, MessageRole
-
+        from llama_index.llms.openai import OpenAI
         curr_history = []
         for message in messages:
             role = message["role"]
             content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
             
+        curr_history.append(ChatMessage(role=MessageRole.USER, content="The timezone is EST and the location is New York City."))            
         tool_spec = GoogleCalendarToolSpec()
-        self.agent = OpenAIAgent.from_tools(tool_spec.to_tool_list(), verbose=True, llm=self.llm, chat_history=curr_history)
+        self.agent = OpenAIAgent.from_tools(tool_spec.to_tool_list(), verbose=True, llm=OpenAI(model="gpt-4-turbo", temperature=0), chat_history=curr_history)
         response = self.agent.stream_chat(prompt)
         self.agent.reset()
         response_gen = response.response_gen
