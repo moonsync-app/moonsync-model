@@ -49,6 +49,7 @@ moonsync_image = (
 
 volume = Volume("moonsync")
 biometric_data_latest = volume.get("/data/biometric_data_latest.csv")
+token = volume.get("/google_credentials/token.json")  # for gcal integration
 
 app = App("moonsync-modal-app")
 
