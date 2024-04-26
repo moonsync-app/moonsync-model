@@ -221,7 +221,9 @@ class Model:
             "Follow these instructions:\n"
             "{instruction_str}\n"
             "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
-            "You only have data till" +  str(self.df.iloc[-1]['date']) +" Always use the past data to make future predictions\n"            
+            "You only have data till"
+            + str(self.df.iloc[-1]["date"])
+            + " Always use the past data to make future predictions\n"
             "Query: {query_str}\n\n"
             "Expression:"
         )
@@ -510,17 +512,23 @@ class Model:
 
             """
         )
-        
-        
+
         # Get the current date
-        timestamp = datetime.fromisoformat(str(self.df.iloc[-1]['date']))
+        timestamp = datetime.fromisoformat(str(self.df.iloc[-1]["date"]))
         self.current_date = timestamp.date()
         print("Current date: ", self.current_date)
         day_of_week = self.current_date.weekday()
-        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
         self.day_name = day_names[day_of_week]
-        
-        
+
         self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: {self.day_name} \n Current Location: New York City"
 
         self.chat_history = [
@@ -554,7 +562,7 @@ class Model:
             chat_history=self.chat_history,
             verbose=True,
         )
-        
+
     def _inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
         from llama_index.core.llms import ChatMessage, MessageRole
@@ -640,29 +648,39 @@ class Model:
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
-            
-                
+
     # Event schedule runner
     def _event_schedule_runner(self, prompt: str, messages):
         from llama_index.tools.google import GoogleCalendarToolSpec
         from llama_index.agent.openai import OpenAIAgent
         from llama_index.core.llms import ChatMessage, MessageRole
         from llama_index.llms.openai import OpenAI
+
         curr_history = []
         for message in messages:
             role = message["role"]
             content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
-            
-        curr_history.append(ChatMessage(role=MessageRole.USER, content=f"The timezone is EST and the location is New York City. If there are no attendees, please use a empty list for attendees. Always get the current date using get_date function"))            
+
+        curr_history.append(
+            ChatMessage(
+                role=MessageRole.USER,
+                content="The timezone is EST and the location is New York City. If there are no attendees, please use a empty list for attendees. Always get the current date using get_date function",
+            )
+        )
         tool_spec = GoogleCalendarToolSpec()
-        self.agent = OpenAIAgent.from_tools(tool_spec.to_tool_list(), verbose=True, llm=OpenAI(model="gpt-4-turbo", temperature=0), chat_history=curr_history)
+        self.agent = OpenAIAgent.from_tools(
+            tool_spec.to_tool_list(),
+            verbose=True,
+            llm=OpenAI(model="gpt-4-turbo", temperature=0),
+            chat_history=curr_history,
+        )
         response = self.agent.stream_chat(prompt)
         self.agent.reset()
         response_gen = response.response_gen
         for token in response_gen:
             yield token
-        
+
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
         prompt = item["prompt"]
@@ -680,7 +698,7 @@ class Model:
                 self._online_inference(prompt=prompt, messages=messages),
                 media_type="text/event-stream",
             )
-        
+
         if "schedule" in prompt:
             return StreamingResponse(
                 self._event_schedule_runner(prompt=prompt, messages=messages),
