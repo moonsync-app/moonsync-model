@@ -401,24 +401,6 @@ class Model:
             question_gen=question_gen,
         )
 
-        # Configure chat engine
-        memory = ChatMemoryBuffer.from_defaults(token_limit=28000)
-
-        custom_prompt = PromptTemplate("""MoonSync is an AI assistant specializing in providing personalized advice to women about their menstrual cycle, exercise, and diet. Its goal is to help women better understand their bodies and make informed decisions to improve their overall health and well-being."
-            "When answering questions it is always  empathetic, understanding, and provide the most accurate and helpful information possible.
-            Given a conversation (between a woman and Moonsync) and a follow up message from Human, \
-            rewrite the message to be a standalone question that captures all relevant context \
-            from the conversation. If there is no chat history or the follow up question is unrelated to the chat history just return the followup message.
-
-            <Chat History>
-            {chat_history}
-
-            <Follow Up Message>
-            {question}
-
-            <Standalone question>
-        """)
-
         self.custom_prompt_forward_history = PromptTemplate(
             """\
             Just copy the chat history as is, inside the tag <Chat History> and copy the follow up message inside the tag <Follow Up Message>
