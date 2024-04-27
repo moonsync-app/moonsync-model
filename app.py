@@ -351,27 +351,6 @@ class Model:
             ),
         )
 
-        # online_tool = QueryEngineTool(
-        #     query_engine=pplx_query_engine,
-        #     metadata=ToolMetadata(
-        #         name="internet",
-        #         description="Use this to get relevant information from the internet",
-        #     ),
-        # )
-
-        router_query_engine = RouterQueryEngine(
-            selector=LLMMultiSelector.from_defaults(),
-            query_engine_tools=[
-                mood_feeling_tool,
-                diet_nutrition_tool,
-                general_tool,
-                fitness_wellness_tool,
-                default_tool,
-            ],
-            llm=self.llm,
-            # response_synthesizer=respose_synthesizer,
-        )
-
         SUB_QUESTION_PROMPT_TMPL = """\
         You are a world class state of the art agent.
 
