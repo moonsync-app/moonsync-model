@@ -30,33 +30,27 @@ from config.prompts import (
     SYSTEM_PROMPT_ENTIRE_CHAT,
 )
 
-moonsync_image = (
-    Image.debian_slim(python_version="3.10")
-    .apt_install(
-        "libglib2.0-0", "libsm6", "libxrender1", "libxext6", "ffmpeg", "libgl1"
-    )
-    .pip_install(
-        "arize-phoenix[evals]~=3.22.0",
-        "gcsfs~=2024.3.1",
-        "llama-index-core~=0.10.29",
-        "llama-index-agent-openai~=0.2.2",
-        "llama-index-callbacks-arize-phoenix~=0.1.2",
-        "llama-index-experimental~=0.1.3",
-        "llama-index-llms-anthropic~=0.1.10",
-        "llama-index-llms-openai-like~=0.1.3",
-        "llama-index-vector-stores-pinecone~=0.1.4",
-        "llama-index~=0.10.29",
-        "nomic~=3.0.21",
-        "openinference-instrumentation-llama-index~=1.2.0",
-        "pinecone-client~=3.2.2",
-        "requests~=2.31.0",
-        "fastapi~=0.68.1",
-        "pandas~=2.2.1",
-        "terra-python~=0.0.12",
-        "llama-index-llms-perplexity~=0.1.3",
-        "llama-index-question-gen-guidance~=0.1.2",
-        "llama-index-tools-google==0.1.4",
-    )
+moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
+    "arize-phoenix[evals]~=3.22.0",
+    "gcsfs~=2024.3.1",
+    "llama-index-core~=0.10.29",
+    "llama-index-agent-openai~=0.2.2",
+    "llama-index-callbacks-arize-phoenix~=0.1.2",
+    "llama-index-experimental~=0.1.3",
+    "llama-index-llms-anthropic~=0.1.10",
+    "llama-index-llms-openai-like~=0.1.3",
+    "llama-index-vector-stores-pinecone~=0.1.4",
+    "llama-index~=0.10.29",
+    "nomic~=3.0.21",
+    "openinference-instrumentation-llama-index~=1.2.0",
+    "pinecone-client~=3.2.2",
+    "requests~=2.31.0",
+    "fastapi~=0.68.1",
+    "pandas~=2.2.1",
+    "terra-python~=0.0.12",
+    "llama-index-llms-perplexity~=0.1.3",
+    "llama-index-question-gen-guidance~=0.1.2",
+    "llama-index-tools-google==0.1.4",
 )
 
 moonsync_volume = Volume.from_name("moonsync")
