@@ -12,6 +12,16 @@ from fastapi import Request
 from fastapi.responses import StreamingResponse
 from typing import Dict
 
+from config.base import (
+    MODAL_CPU,
+    MODAL_MEMORY,
+    MODAL_CONTAINER_IDLE_TIMEOUT,
+    OPENAI_MODEL,
+    OPENAI_MODEL_TEMPERATURE,
+    PPLX_MODEL,
+    PPLX_MODEL_TEMPERATURE,
+)
+
 moonsync_image = (
     Image.debian_slim(python_version="3.10")
     .apt_install(
@@ -47,10 +57,9 @@ app = App("moonsync-modal-app")
 
 
 @app.cls(
-    # gpu=gpu.A10G(),
-    cpu=4.0,
-    memory=32768,
-    container_idle_timeout=240,
+    cpu=MODAL_CPU,
+    memory=MODAL_MEMORY,
+    container_idle_timeout=MODAL_CONTAINER_IDLE_TIMEOUT,
     image=moonsync_image,
     secrets=[Secret.from_name("moonsync-secret")],
     volumes={"/volumes/moonsync": moonsync_volume},
@@ -100,12 +109,12 @@ class Model:
         pc = Pinecone(api_key=api_key)
 
         # LLM Model
-        self.llm = OpenAI(model="gpt-4-turbo", temperature=0.1)
+        self.llm = OpenAI(model=OPENAI_MODEL, temperature=OPENAI_MODEL_TEMPERATURE)
         # self.llm = Anthropic(model="claude-3-opus-20240229", temperature=0)
         self.pplx_llm = Perplexity(
             api_key=os.environ["PPLX_API_KEY"],
-            model="sonar-small-online",
-            temperature=0.5,
+            model=PPLX_MODEL,
+            temperature=PPLX_MODEL_TEMPERATURE,
         )
 
         Settings.llm = self.llm
