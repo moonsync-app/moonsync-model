@@ -8,3 +8,5 @@ OPENAI_MODEL_TEMPERATURE = 0.1
 
 PPLX_MODEL = "sonar-small-online"
 PPLX_MODEL_TEMPERATURE = 0.5
+
+WEATHER_API_URL = "http://api.weatherapi.com/v1/current.json"

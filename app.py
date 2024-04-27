@@ -20,6 +20,7 @@ from config.base import (
     OPENAI_MODEL_TEMPERATURE,
     PPLX_MODEL,
     PPLX_MODEL_TEMPERATURE,
+    WEATHER_API_URL,
 )
 
 from config.prompts import (
@@ -669,7 +670,7 @@ class Model:
         import os
 
         api_key = os.environ["WEATHER_API_KEY"]
-        base_url = "http://api.weatherapi.com/v1/current.json"
+        base_url = WEATHER_API_URL
 
         params = {"key": api_key, "q": "New York City", "aqi": "no"}
 
