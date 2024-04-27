@@ -88,16 +88,13 @@ class Model:
         from llama_index.core.indices import EmptyIndex
         from llama_index.core import get_response_synthesizer
         from llama_index.core.query_engine import (
-            RouterQueryEngine,
             SubQuestionQueryEngine,
         )
-        from llama_index.core.selectors import LLMMultiSelector
         from llama_index.core.tools import QueryEngineTool, ToolMetadata
         from llama_index.core.chat_engine import (
             CondenseQuestionChatEngine,
         )
         from llama_index.core.llms import ChatMessage, MessageRole
-        from llama_index.core.memory import ChatMemoryBuffer
         from llama_index.core import PromptTemplate
         from llama_index.experimental.query_engine import PandasQueryEngine
         import pandas as pd
