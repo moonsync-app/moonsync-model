@@ -237,32 +237,6 @@ class Model:
         destination_path = "token.json"
         shutil.move(token_json, destination_path)
 
-        # # Online PPLX Query Engine
-        # empty_index_retriever = EmptyIndexRetriever(index=EmptyIndex())
-
-        # pplx_prompt = PromptTemplate(
-        #     "Query: {query_str}\n"
-        #     "Answer: "
-        # )
-
-        # class PPLXOnlineQueryEngine(CustomQueryEngine):
-        #     retriever: BaseRetriever
-        #     response_synthesizer: BaseSynthesizer
-        #     pplx: OpenAI
-        #     qa_prompt: PromptTemplate
-
-        #     def custom_query(self, query_str: str):
-        #         response = self.pplx.complete(
-        #             pplx_prompt.format(query_str=query_str)
-        #         )
-
-        #         return str(response)
-
-        # synthesizer = get_response_synthesizer(response_mode="generation")
-        # pplx_query_engine = PPLXOnlineQueryEngine(
-        #     retriever=empty_index_retriever, response_synthesizer=synthesizer, pplx=pplx_llm, qa_prompt=pplx_prompt
-        # )
-
         self.SYSTEM_PROMPT = SYSTEM_PROMPT
 
         # Text QA Prompt
