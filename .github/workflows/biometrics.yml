@@ -24,9 +24,6 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-
       - run: |
           pip install terra-python jsonpath-ng sqlite_utils pandas
 
