@@ -2,6 +2,8 @@ name: biometrics
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 14 * * *'
 
 jobs:
   deploy:
@@ -33,4 +35,4 @@ jobs:
       - name: Refresh biometric data
         run: |
           python biometrics.py
-          modal volume put --force $MODAL_VOLUME biometric_data_latest.csv  /data/
+          modal volume put --force $MODAL_VOLUME biometric_data.csv  /data/
