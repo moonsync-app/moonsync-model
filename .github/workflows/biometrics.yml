@@ -2,6 +2,7 @@ name: biometrics
 
 on:
   workflow_dispatch:
+  push:
 
 jobs:
   deploy:
