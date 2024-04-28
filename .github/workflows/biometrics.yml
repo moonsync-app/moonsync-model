@@ -2,7 +2,8 @@ name: biometrics
 
 on:
   workflow_dispatch:
-  push:
+  schedule:
+    - cron: '0 14 * * *'
 
 jobs:
   deploy:
