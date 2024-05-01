@@ -213,7 +213,7 @@ class Model:
         empty_query_engine = EmptyIndex().as_query_engine()
 
         # probably can mounted as modal volume
-        biometric_data_latest = "/volumes/moonsync/moonsync/data/biometric_data_latest.csv"
+        biometric_data_latest = "/volumes/moonsync/data/biometric_data_latest.csv"
         self.df = pd.read_csv(biometric_data_latest)
         self.df["date"] = self.df["date"].apply(pd.to_datetime)
         self.df.rename(
