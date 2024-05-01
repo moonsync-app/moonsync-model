@@ -51,6 +51,9 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-llms-perplexity~=0.1.3",
     "llama-index-question-gen-guidance~=0.1.2",
     "llama-index-tools-google==0.1.4",
+    "llama-index-llms-gemini",
+    "google-generativeai",
+    "llama-index-multi-modal-llms-openai"
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -99,9 +102,11 @@ class Model:
         from llama_index.experimental.query_engine import PandasQueryEngine
         import pandas as pd
         from llama_index.question_gen.openai import OpenAIQuestionGenerator
+        from llama_index.question_gen.guidance import GuidanceQuestionGenerator
         from typing import List
         from llama_index.llms.perplexity import Perplexity
         from datetime import datetime
+        from llama_index.llms.gemini import Gemini
 
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
@@ -115,8 +120,29 @@ class Model:
             model=PPLX_MODEL,
             temperature=PPLX_MODEL_TEMPERATURE,
         )
+        
+        safety_settings = [
+        {
+            "category": "HARM_CATEGORY_HARASSMENT",
+            "threshold": "BLOCK_NONE"
+        },
+        {
+            "category": "HARM_CATEGORY_HATE_SPEECH",
+            "threshold": "BLOCK_NONE"
+        },
+        {
+            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "threshold": "BLOCK_NONE"
+        },
+        {
+            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+            "threshold": "BLOCK_NONE"
+        },
+        ]
 
-        Settings.llm = self.llm
+        self.gemini = Gemini(model="models/gemini-pro", temperature=0.2, safety_settings=safety_settings)
+
+        Settings.llm = self.gemini
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
@@ -187,7 +213,7 @@ class Model:
         empty_query_engine = EmptyIndex().as_query_engine()
 
         # probably can mounted as modal volume
-        biometric_data_latest = "/volumes/moonsync/data/biometric_data_latest.csv"
+        biometric_data_latest = "/volumes/moonsync/moonsync/data/biometric_data_latest.csv"
         self.df = pd.read_csv(biometric_data_latest)
         self.df["date"] = self.df["date"].apply(pd.to_datetime)
         self.df.rename(
@@ -221,7 +247,7 @@ class Model:
         )
 
         pandas_query_engine = PandasQueryEngine(
-            df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT
+            df=self.df, verbose=True, pandas_prompt=DEFAULT_PANDAS_PROMPT
         )
 
         # setup token.json for gcal
@@ -375,7 +401,8 @@ class Model:
         """
 
         question_gen = OpenAIQuestionGenerator.from_defaults(
-            prompt_template_str=SUB_QUESTION_PROMPT_TMPL
+            prompt_template_str=SUB_QUESTION_PROMPT_TMPL,
+            llm=self.llm,
         )
 
         self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
@@ -449,7 +476,6 @@ class Model:
 
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
-            llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
             verbose=True,
@@ -494,7 +520,6 @@ class Model:
 
             self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
                 query_engine=self.sub_question_query_engine,
-                llm=self.llm,
                 condense_question_prompt=self.custom_prompt_forward_history,
                 chat_history=curr_history,
                 verbose=True,
@@ -510,7 +535,6 @@ class Model:
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
-            llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
             verbose=True,
@@ -575,8 +599,40 @@ class Model:
 
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
-        prompt = item["prompt"]
-        messages = item["messages"]
+        import io, base64
+        from PIL import Image
+        from llama_index.readers.file.image import ImageReader
+        from llama_index.multi_modal_llms.openai import OpenAIMultiModal
+            
+        prompt, image_url, image_response = "", "", ""
+        if (isinstance(item['prompt'], list)):
+            for value in item['prompt']:
+                if value['type'] == 'text':
+                    prompt = value['text']
+                if value['type'] == 'image_url':
+                    image_url = value['image_url']['url']   
+        else: 
+            prompt = item["prompt"]
+            
+            
+        messages = item["messages"]        
+        if(image_url):
+            img = Image.open(io.BytesIO(base64.decodebytes(bytes(image_url.split(',')[1], "utf-8"))))
+            img.save('/volumes/moonsync/images/test.jpeg')
+            
+            image_doc = ImageReader().load_data(file="/volumes/moonsync/images/test.jpeg")
+            print('Image Doc', image_doc)
+            
+            openai_mm_llm = OpenAIMultiModal(
+                            model="gpt-4-vision-preview", max_new_tokens=300)
+
+
+            image_response = openai_mm_llm.complete(
+                prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
+                image_documents=image_doc,
+            )
+            
+            print("Image description", image_response)
 
         # Get the headers
         city = request.headers.get("x-vercel-ip-city", "Unknown")
@@ -597,6 +653,10 @@ class Model:
                 media_type="text/event-stream",
             )
 
+        if image_response != "":
+            prompt = prompt + "\n" + "Additional information about the image uploaded \n " +  image_response.text
+        
+        print("PROMPT", prompt)
         return StreamingResponse(
             self._inference(prompt=prompt, messages=messages),
             media_type="text/event-stream",
