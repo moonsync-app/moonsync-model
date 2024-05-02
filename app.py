@@ -113,14 +113,6 @@ class Model:
         pc = Pinecone(api_key=api_key)
 
         # LLM Model
-        self.llm = OpenAI(model=OPENAI_MODEL, temperature=OPENAI_MODEL_TEMPERATURE)
-        # self.llm = Anthropic(model="claude-3-opus-20240229", temperature=0)
-        self.pplx_llm = Perplexity(
-            api_key=os.environ["PPLX_API_KEY"],
-            model=PPLX_MODEL,
-            temperature=PPLX_MODEL_TEMPERATURE,
-        )
-        
         safety_settings = [
         {
             "category": "HARM_CATEGORY_HARASSMENT",
@@ -141,8 +133,15 @@ class Model:
         ]
 
         self.gemini = Gemini(model="models/gemini-pro", temperature=0.2, safety_settings=safety_settings)
-
         Settings.llm = self.gemini
+        
+        self.pplx_llm = Perplexity(
+            api_key=os.environ["PPLX_API_KEY"],
+            model=PPLX_MODEL,
+            temperature=PPLX_MODEL_TEMPERATURE,
+        )
+        
+        
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
@@ -400,6 +399,7 @@ class Model:
         {query_str}
         """
 
+        self.llm = OpenAI(model=OPENAI_MODEL, temperature=OPENAI_MODEL_TEMPERATURE)
         question_gen = OpenAIQuestionGenerator.from_defaults(
             prompt_template_str=SUB_QUESTION_PROMPT_TMPL,
             llm=self.llm,
