@@ -53,7 +53,9 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-tools-google==0.1.4",
     "llama-index-llms-gemini",
     "google-generativeai",
-    "llama-index-multi-modal-llms-openai"
+    "llama-index-multi-modal-llms-openai",
+    "llama-index-multi-modal-llms-gemini",
+    # "langfuse"
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -107,6 +109,15 @@ class Model:
         from llama_index.llms.perplexity import Perplexity
         from datetime import datetime
         from llama_index.llms.gemini import Gemini
+        from llama_index.core.callbacks import CallbackManager
+        # from langfuse.llama_index import LlamaIndexCallbackHandler
+        
+        # langfuse_callback_handler = LlamaIndexCallbackHandler(
+        #     public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+        #     secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+        #     host=os.environ["LANGFUSE_HOST"],
+        # )
+        # Settings.callback_manager = CallbackManager([langfuse_callback_handler])
 
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
@@ -116,11 +127,11 @@ class Model:
         safety_settings = [
         {
             "category": "HARM_CATEGORY_HARASSMENT",
-            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            "threshold": "BLOCK_NONE"
         },
         {
             "category": "HARM_CATEGORY_HATE_SPEECH",
-            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            "threshold": "BLOCK_NONE"
         },
         {
             "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
@@ -128,11 +139,11 @@ class Model:
         },
         {
             "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            "threshold": "BLOCK_NONE"
         },
         ]
 
-        self.gemini = Gemini(model="models/gemini-pro", temperature=0.2, safety_settings=safety_settings)
+        self.gemini = Gemini(model="models/gemini-1.5-pro-latest", temperature=0, safety_settings=safety_settings, max_tokens=8000)
         Settings.llm = self.gemini
         
         self.pplx_llm = Perplexity(
@@ -186,7 +197,7 @@ class Model:
         for vector_index in vector_indexes:
             query_engines.append(
                 vector_index.as_query_engine(
-                    similarity_top_k=2,
+                    similarity_top_k=4,
                     text_qa_template=sources_prompt,
                     # refine_template=refine_template
                 )
@@ -603,7 +614,9 @@ class Model:
         from PIL import Image
         from llama_index.readers.file.image import ImageReader
         from llama_index.multi_modal_llms.openai import OpenAIMultiModal
-            
+        from llama_index.multi_modal_llms.gemini import GeminiMultiModal
+        import uuid
+        
         prompt, image_url, image_response = "", "", ""
         if (isinstance(item['prompt'], list)):
             for value in item['prompt']:
@@ -617,17 +630,19 @@ class Model:
             
         messages = item["messages"]        
         if(image_url):
+            id = str(uuid.uuid4())
             img = Image.open(io.BytesIO(base64.decodebytes(bytes(image_url.split(',')[1], "utf-8"))))
-            img.save('/volumes/moonsync/images/test.jpeg')
+            img.save(f"/volumes/moonsync/images/test-{id}.jpeg")
             
-            image_doc = ImageReader().load_data(file="/volumes/moonsync/images/test.jpeg")
+            image_doc = ImageReader().load_data(file=f"/volumes/moonsync/images/test-{id}.jpeg")
             print('Image Doc', image_doc)
             
-            openai_mm_llm = OpenAIMultiModal(
-                            model="gpt-4-vision-preview", max_new_tokens=300)
+            # openai_mm_llm = OpenAIMultiModal(
+            #                 model="gpt-4-vision-preview", max_new_tokens=300)
+            
+            gemini_pro = GeminiMultiModal(model_name="models/gemini-pro-vision")
 
-
-            image_response = openai_mm_llm.complete(
+            image_response = gemini_pro.complete(
                 prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
                 image_documents=image_doc,
             )
