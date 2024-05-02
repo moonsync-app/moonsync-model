@@ -51,6 +51,11 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-llms-perplexity~=0.1.3",
     "llama-index-question-gen-guidance~=0.1.2",
     "llama-index-tools-google==0.1.4",
+    "llama-index-llms-gemini",
+    "google-generativeai",
+    "llama-index-multi-modal-llms-openai",
+    "llama-index-multi-modal-llms-gemini",
+    # "langfuse"
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -99,24 +104,55 @@ class Model:
         from llama_index.experimental.query_engine import PandasQueryEngine
         import pandas as pd
         from llama_index.question_gen.openai import OpenAIQuestionGenerator
+        from llama_index.question_gen.guidance import GuidanceQuestionGenerator
         from typing import List
         from llama_index.llms.perplexity import Perplexity
         from datetime import datetime
+        from llama_index.llms.gemini import Gemini
+        from llama_index.core.callbacks import CallbackManager
+        # from langfuse.llama_index import LlamaIndexCallbackHandler
+        
+        # langfuse_callback_handler = LlamaIndexCallbackHandler(
+        #     public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+        #     secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+        #     host=os.environ["LANGFUSE_HOST"],
+        # )
+        # Settings.callback_manager = CallbackManager([langfuse_callback_handler])
 
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
         pc = Pinecone(api_key=api_key)
 
         # LLM Model
-        self.llm = OpenAI(model=OPENAI_MODEL, temperature=OPENAI_MODEL_TEMPERATURE)
-        # self.llm = Anthropic(model="claude-3-opus-20240229", temperature=0)
+        safety_settings = [
+        {
+            "category": "HARM_CATEGORY_HARASSMENT",
+            "threshold": "BLOCK_NONE"
+        },
+        {
+            "category": "HARM_CATEGORY_HATE_SPEECH",
+            "threshold": "BLOCK_NONE"
+        },
+        {
+            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "threshold": "BLOCK_NONE"
+        },
+        {
+            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+            "threshold": "BLOCK_NONE"
+        },
+        ]
+
+        self.gemini = Gemini(model="models/gemini-1.5-pro-latest", temperature=0, safety_settings=safety_settings, max_tokens=8000)
+        Settings.llm = self.gemini
+        
         self.pplx_llm = Perplexity(
             api_key=os.environ["PPLX_API_KEY"],
             model=PPLX_MODEL,
             temperature=PPLX_MODEL_TEMPERATURE,
         )
-
-        Settings.llm = self.llm
+        
+        
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
@@ -161,7 +197,7 @@ class Model:
         for vector_index in vector_indexes:
             query_engines.append(
                 vector_index.as_query_engine(
-                    similarity_top_k=2,
+                    similarity_top_k=4,
                     text_qa_template=sources_prompt,
                     # refine_template=refine_template
                 )
@@ -221,7 +257,7 @@ class Model:
         )
 
         pandas_query_engine = PandasQueryEngine(
-            df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT
+            df=self.df, verbose=True, pandas_prompt=DEFAULT_PANDAS_PROMPT
         )
 
         # setup token.json for gcal
@@ -374,8 +410,10 @@ class Model:
         {query_str}
         """
 
+        self.llm = OpenAI(model=OPENAI_MODEL, temperature=OPENAI_MODEL_TEMPERATURE)
         question_gen = OpenAIQuestionGenerator.from_defaults(
-            prompt_template_str=SUB_QUESTION_PROMPT_TMPL
+            prompt_template_str=SUB_QUESTION_PROMPT_TMPL,
+            llm=self.llm,
         )
 
         self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
@@ -449,7 +487,6 @@ class Model:
 
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
-            llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
             verbose=True,
@@ -494,7 +531,6 @@ class Model:
 
             self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
                 query_engine=self.sub_question_query_engine,
-                llm=self.llm,
                 condense_question_prompt=self.custom_prompt_forward_history,
                 chat_history=curr_history,
                 verbose=True,
@@ -510,7 +546,6 @@ class Model:
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
-            llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
             verbose=True,
@@ -575,8 +610,44 @@ class Model:
 
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
-        prompt = item["prompt"]
-        messages = item["messages"]
+        import io, base64
+        from PIL import Image
+        from llama_index.readers.file.image import ImageReader
+        from llama_index.multi_modal_llms.openai import OpenAIMultiModal
+        from llama_index.multi_modal_llms.gemini import GeminiMultiModal
+        import uuid
+        
+        prompt, image_url, image_response = "", "", ""
+        if (isinstance(item['prompt'], list)):
+            for value in item['prompt']:
+                if value['type'] == 'text':
+                    prompt = value['text']
+                if value['type'] == 'image_url':
+                    image_url = value['image_url']['url']   
+        else: 
+            prompt = item["prompt"]
+            
+            
+        messages = item["messages"]        
+        if(image_url):
+            id = str(uuid.uuid4())
+            img = Image.open(io.BytesIO(base64.decodebytes(bytes(image_url.split(',')[1], "utf-8"))))
+            img.save(f"/volumes/moonsync/images/test-{id}.jpeg")
+            
+            image_doc = ImageReader().load_data(file=f"/volumes/moonsync/images/test-{id}.jpeg")
+            print('Image Doc', image_doc)
+            
+            # openai_mm_llm = OpenAIMultiModal(
+            #                 model="gpt-4-vision-preview", max_new_tokens=300)
+            
+            gemini_pro = GeminiMultiModal(model_name="models/gemini-pro-vision")
+
+            image_response = gemini_pro.complete(
+                prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
+                image_documents=image_doc,
+            )
+            
+            print("Image description", image_response)
 
         # Get the headers
         city = request.headers.get("x-vercel-ip-city", "Unknown")
@@ -597,6 +668,10 @@ class Model:
                 media_type="text/event-stream",
             )
 
+        if image_response != "":
+            prompt = prompt + "\n" + "Additional information about the image uploaded \n " +  image_response.text
+        
+        print("PROMPT", prompt)
         return StreamingResponse(
             self._inference(prompt=prompt, messages=messages),
             media_type="text/event-stream",
