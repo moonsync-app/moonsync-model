@@ -51,6 +51,7 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-llms-perplexity~=0.1.3",
     "llama-index-question-gen-guidance~=0.1.2",
     "llama-index-tools-google==0.1.4",
+    "llama-index-multi-modal-llms-openai",
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -575,8 +576,40 @@ class Model:
 
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
-        prompt = item["prompt"]
-        messages = item["messages"]
+        import io, base64
+        from PIL import Image
+        from llama_index.readers.file.image import ImageReader
+        from llama_index.multi_modal_llms.openai import OpenAIMultiModal
+        import uuid
+        
+        prompt, image_url, image_response = "", "", ""
+        if (isinstance(item['prompt'], list)):
+            for value in item['prompt']:
+                if value['type'] == 'text':
+                    prompt = value['text']
+                if value['type'] == 'image_url':
+                    image_url = value['image_url']['url']   
+        else: 
+            prompt = item["prompt"]
+            
+            
+        messages = item["messages"]        
+        if(image_url):
+            id = str(uuid.uuid4())
+            img = Image.open(io.BytesIO(base64.decodebytes(bytes(image_url.split(',')[1], "utf-8"))))
+            img.save(f"/volumes/moonsync/data/test-{id}.jpeg")
+            
+            image_doc = ImageReader().load_data(file=f"/volumes/moonsync/data/test-{id}.jpeg")
+            print('Image Doc', image_doc)
+            
+            openai_mm_llm = OpenAIMultiModal(model="gpt-4-vision-preview", max_new_tokens=300)
+            
+            image_response = openai_mm_llm.complete(
+                prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
+                image_documents=image_doc,
+            )
+            
+            print("Image description", image_response)
 
         # Get the headers
         city = request.headers.get("x-vercel-ip-city", "Unknown")
@@ -597,6 +630,9 @@ class Model:
                 media_type="text/event-stream",
             )
 
+        if image_response != "":
+            prompt = prompt + "\n" + "Additional information about the image uploaded \n " +  image_response.text
+        
         return StreamingResponse(
             self._inference(prompt=prompt, messages=messages),
             media_type="text/event-stream",
