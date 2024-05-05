@@ -52,6 +52,8 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-question-gen-guidance~=0.1.2",
     "llama-index-tools-google==0.1.4",
     "llama-index-multi-modal-llms-openai",
+    "llama-index-llms-azure-openai",
+    "llama-index-multi-modal-llms-azure-openai"
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -103,13 +105,25 @@ class Model:
         from typing import List
         from llama_index.llms.perplexity import Perplexity
         from datetime import datetime
-
+        from llama_index.llms.azure_openai import AzureOpenAI
+        
+        self.api_key = os.environ["AZURE_CHAT_API_KEY"]
+        self.azure_endpoint = os.environ["AZURE_CHAT_ENDPOINT"]
+        
+        # LLM Model
+        self.llm = AzureOpenAI(
+                model="gpt-4-turbo-2024-04-09",
+                deployment_name="moonsync-gpt4-turbo",
+                api_key=self.api_key,
+                azure_endpoint=self.azure_endpoint,
+                api_version="2023-10-01-preview",
+                temperature=0.2,
+        ) 
+        
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
         pc = Pinecone(api_key=api_key)
-
-        # LLM Model
-        self.llm = OpenAI(model=OPENAI_MODEL, temperature=OPENAI_MODEL_TEMPERATURE)
+        
         # self.llm = Anthropic(model="claude-3-opus-20240229", temperature=0)
         self.pplx_llm = Perplexity(
             api_key=os.environ["PPLX_API_KEY"],
@@ -581,6 +595,8 @@ class Model:
         from llama_index.readers.file.image import ImageReader
         from llama_index.multi_modal_llms.openai import OpenAIMultiModal
         import uuid
+        from llama_index.multi_modal_llms.azure_openai import AzureOpenAIMultiModal
+        import os
         
         prompt, image_url, image_response = "", "", ""
         if (isinstance(item['prompt'], list)):
@@ -601,10 +617,20 @@ class Model:
             
             image_doc = ImageReader().load_data(file=f"/volumes/moonsync/data/test-{id}.jpeg")
             print('Image Doc', image_doc)
+                        
+            api_key = os.environ["AZURE_MULTI_MODAL_API_KEY"]
+            azure_endpoint = os.environ["AZURE_MULTI_MODAL_ENDPOINT"]
+
+            azure_openai_mm_llm = AzureOpenAIMultiModal(
+                model="gpt-4-vision-preview",
+                deployment_name="moonsync-vision",
+                api_key=api_key,
+                azure_endpoint=azure_endpoint,
+                api_version="2023-10-01-preview",
+                max_new_tokens=300,
+            )
             
-            openai_mm_llm = OpenAIMultiModal(model="gpt-4-vision-preview", max_new_tokens=300)
-            
-            image_response = openai_mm_llm.complete(
+            image_response = azure_openai_mm_llm.complete(
                 prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
                 image_documents=image_doc,
             )
