@@ -613,10 +613,11 @@ class Model:
         if(image_url):
             print('IMAGE_URL', image_url[:100])
             id = str(uuid.uuid4())
+            extension = image_url.split(',')[0].split('/')[1].split(';')[0]
             img = Image.open(io.BytesIO(base64.decodebytes(bytes(image_url.split(',')[1], "utf-8"))))
-            img.save(f"/volumes/moonsync/data/test-{id}.jpeg")
+            img.save(f"/volumes/moonsync/data/img-{id}.{extension}")
             
-            image_doc = ImageReader().load_data(file=f"/volumes/moonsync/data/test-{id}.jpeg")
+            image_doc = ImageReader().load_data(file=f"/volumes/moonsync/data/img-{id}.{extension}")
             print('Image Doc', image_doc)
                         
             api_key = os.environ["AZURE_MULTI_MODAL_API_KEY"]
