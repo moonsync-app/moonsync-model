@@ -611,6 +611,7 @@ class Model:
             
         messages = item["messages"]        
         if(image_url):
+            print('IMAGE_URL', image_url[:100])
             id = str(uuid.uuid4())
             img = Image.open(io.BytesIO(base64.decodebytes(bytes(image_url.split(',')[1], "utf-8"))))
             img.save(f"/volumes/moonsync/data/test-{id}.jpeg")
@@ -621,22 +622,16 @@ class Model:
             api_key = os.environ["AZURE_MULTI_MODAL_API_KEY"]
             azure_endpoint = os.environ["AZURE_MULTI_MODAL_ENDPOINT"]
 
-            # azure_openai_mm_llm = AzureOpenAIMultiModal(
-            #     model="gpt-4-vision-preview",
-            #     deployment_name="moonsync-vision",
-            #     api_key=api_key,
-            #     azure_endpoint=azure_endpoint,
-            #     api_version="2023-10-01-preview",
-            #     max_new_tokens=300,
-            # )
+            azure_openai_mm_llm = AzureOpenAIMultiModal(
+                model="gpt-4-vision-preview",
+                deployment_name="moonsync-vision",
+                api_key=api_key,
+                azure_endpoint=azure_endpoint,
+                api_version="2023-10-01-preview",
+                max_new_tokens=300,
+            )
             
-            # image_response = azure_openai_mm_llm.complete(
-            #     prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
-            #     image_documents=image_doc,
-            # )
-            openai_mm_llm = OpenAIMultiModal(model="gpt-4-vision-preview", max_new_tokens=300)
-            
-            image_response = openai_mm_llm.complete(
+            image_response = azure_openai_mm_llm.complete(
                 prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
                 image_documents=image_doc,
             )
