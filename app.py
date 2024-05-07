@@ -422,7 +422,7 @@ class Model:
 
         # Get the current date
         timestamp = datetime.fromisoformat(str(self.df.iloc[-1]["date"]))
-        self.current_date = datetime.today().strftime('%Y-%m-%d')
+        self.current_date = datetime.strptime(datetime.today().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
         print("Current date: ", self.current_date)
         day_of_week = self.current_date.weekday()
         day_names = [
