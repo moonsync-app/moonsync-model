@@ -224,7 +224,7 @@ class Model:
             "Follow these instructions:\n"
             "{instruction_str}\n"
             "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
-            "You only have data till"
+            "You only have data till the date "
             + str(self.df.iloc[-1]["date"])
             + " Always use the past data to make future predictions\n"
             "Query: {query_str}\n\n"
@@ -422,7 +422,7 @@ class Model:
 
         # Get the current date
         timestamp = datetime.fromisoformat(str(self.df.iloc[-1]["date"]))
-        self.current_date = timestamp.date()
+        self.current_date = datetime.today().strftime('%Y-%m-%d')
         print("Current date: ", self.current_date)
         day_of_week = self.current_date.weekday()
         day_names = [
@@ -436,7 +436,7 @@ class Model:
         ]
         self.day_name = day_names[day_of_week]
 
-        self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.df.iloc[-1]['date']} \nDay of the week: {self.day_name} \n Current Location: New York City"
+        self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
