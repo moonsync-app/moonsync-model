@@ -145,7 +145,7 @@ class Model:
             temperature=PPLX_MODEL_TEMPERATURE,
         )
 
-        Settings.llm = self.groq_70b
+        Settings.llm = self.llm
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
