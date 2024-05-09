@@ -53,7 +53,9 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-tools-google==0.1.4",
     "llama-index-multi-modal-llms-openai",
     "llama-index-llms-azure-openai",
-    "llama-index-multi-modal-llms-azure-openai"
+    "llama-index-multi-modal-llms-azure-openai",
+    "langfuse",
+    "llama-index-llms-groq"
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -106,6 +108,9 @@ class Model:
         from llama_index.llms.perplexity import Perplexity
         from datetime import datetime
         from llama_index.llms.azure_openai import AzureOpenAI
+        from llama_index.core.callbacks import CallbackManager
+        from langfuse.llama_index import LlamaIndexCallbackHandler
+        from llama_index.llms.groq import Groq
         
         self.api_key = os.environ["AZURE_CHAT_API_KEY"]
         self.azure_endpoint = os.environ["AZURE_CHAT_ENDPOINT"]
@@ -117,21 +122,30 @@ class Model:
                 api_key=self.api_key,
                 azure_endpoint=self.azure_endpoint,
                 api_version="2023-10-01-preview",
-                temperature=0.2,
-        ) 
+                temperature=0.1,
+        )         
+        self.small_llm = OpenAI(model="gpt-3.5-turbo", temperature=0.1)
+        # llama3-70b-8192
+        self.groq = Groq(model="llama3-8b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
+        self.groq_70b = Groq(model="llama3-70b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
+        self.llm = OpenAI(model="gpt-4-turbo", temperature=0.1)
+ 
+        langfuse_callback_handler = LlamaIndexCallbackHandler()
+        Settings.callback_manager = CallbackManager([langfuse_callback_handler])
         
         # Init Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
         pc = Pinecone(api_key=api_key)
         
-        # self.llm = Anthropic(model="claude-3-opus-20240229", temperature=0)
+        # self.anthropic = Anthropic(model="claude-3-opus-20240229", temperature=0.2)
+        
         self.pplx_llm = Perplexity(
             api_key=os.environ["PPLX_API_KEY"],
             model=PPLX_MODEL,
             temperature=PPLX_MODEL_TEMPERATURE,
         )
 
-        Settings.llm = self.llm
+        Settings.llm = self.groq_70b
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
@@ -176,6 +190,7 @@ class Model:
         for vector_index in vector_indexes:
             query_engines.append(
                 vector_index.as_query_engine(
+                    llm=self.groq,
                     similarity_top_k=2,
                     text_qa_template=sources_prompt,
                     # refine_template=refine_template
@@ -224,6 +239,7 @@ class Model:
             "Follow these instructions:\n"
             "{instruction_str}\n"
             "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
+            "IMPORTANT - Always get the 'date' column for any query\n"
             "You only have data till the date "
             + str(self.df.iloc[-1]["date"])
             + " Always use the past data to make future predictions\n"
@@ -236,7 +252,7 @@ class Model:
         )
 
         pandas_query_engine = PandasQueryEngine(
-            df=self.df, verbose=True, llm=self.llm, pandas_prompt=DEFAULT_PANDAS_PROMPT
+            df=self.df, verbose=True, pandas_prompt=DEFAULT_PANDAS_PROMPT, llm=self.llm
         )
 
         # setup token.json for gcal
@@ -308,7 +324,7 @@ class Model:
             query_engine=mood_feeling_query_engine,
             metadata=ToolMetadata(
                 name="mood/feeling",
-                description="Useful for questions related to mood and feelings ",
+                description="Useful for questions related to women's mood and feelings",
             ),
         )
 
@@ -349,7 +365,7 @@ class Model:
             metadata=ToolMetadata(
                 name="biometrics",
                 # TODO: make a decision to remove the phase from prompt
-                description="Use this to get relevant biometric data relevant to the query. Always get the user's menstrual_phase. The columns are - "
+                description="Use this to get relevant biometric data relevant to the query. Always get the user's menstrual_phase. You have access to the following parameters - "
                 "'date', 'recovery_score', 'activity_score', 'sleep_score',"
                 "'stress_data', 'number_steps', 'total_burned_calories',"
                 "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
@@ -373,12 +389,10 @@ class Model:
         * The sub questions should be relevant to the user question
         * The sub questions should be answerable by the tools provided
         * You can generate multiple sub questions for each tool
-        * Always use the 'biometrics' tool to get the user's menstrual phase
         * Tools must be specified by their name, not their description
         * You must not use a tool if you don't think it's relevant
-        * Only use the text after the <Follow Up Message> tag to generate the sub questions
-
-        Output the list of sub questions by calling the SubQuestionList function.
+        
+        Only Output the list of sub questions by calling the SubQuestionList function, nothing else.
 
         ## Tools
         ```json
@@ -388,9 +402,41 @@ class Model:
         ## User Question
         {query_str}
         """
+        from llama_index.core.question_gen.prompts import build_tools_text
+        from typing import List, Optional, Sequence, cast
+        from llama_index.core.llms.llm import LLM
+        from llama_index.core.question_gen.prompts import build_tools_text
+        from llama_index.core.question_gen.types import (
+            SubQuestion,
+            SubQuestionList,
+        )
+        from llama_index.core.schema import QueryBundle
+        from llama_index.core.settings import Settings
+        from llama_index.core.tools.types import ToolMetadata
+        
+        class CustomOpenAIQuestionGenerator(OpenAIQuestionGenerator):
+            def generate(self, tools: Sequence[ToolMetadata], query: QueryBundle) -> List[SubQuestion]:
+                tools_str = build_tools_text(tools)
+                query_str = query.query_str
+                question_list = cast(
+                    SubQuestionList, self._program(query_str=query_str.split("<Follow Up Message>")[1], tools_str=tools_str)
+                )
+                return question_list.items
 
-        question_gen = OpenAIQuestionGenerator.from_defaults(
-            prompt_template_str=SUB_QUESTION_PROMPT_TMPL
+            async def agenerate(
+                self, tools: Sequence[ToolMetadata], query: QueryBundle
+            ) -> List[SubQuestion]:
+                tools_str = build_tools_text(tools)
+                query_str = query.query_str
+                question_list = cast(
+                    SubQuestionList,
+                    await self._program.acall(query_str=query_str.split("<Follow Up Message>")[1], tools_str=tools_str),
+                )
+                assert isinstance(question_list, SubQuestionList)
+                return question_list.items
+            
+        question_gen = CustomOpenAIQuestionGenerator.from_defaults(
+            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.llm
         )
 
         self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
@@ -402,7 +448,6 @@ class Model:
                 default_tool,
                 biometric_tool,
             ],
-            llm=self.llm,
             response_synthesizer=response_synthesizer,
             question_gen=question_gen,
         )
@@ -464,7 +509,6 @@ class Model:
 
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
-            llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
             verbose=True,
@@ -509,7 +553,6 @@ class Model:
 
             self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
                 query_engine=self.sub_question_query_engine,
-                llm=self.llm,
                 condense_question_prompt=self.custom_prompt_forward_history,
                 chat_history=curr_history,
                 verbose=True,
@@ -525,7 +568,6 @@ class Model:
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
-            llm=self.llm,
             condense_question_prompt=self.custom_prompt_forward_history,
             chat_history=self.chat_history,
             verbose=True,
@@ -551,7 +593,7 @@ class Model:
             content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
 
-        curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt))
+        curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt + "\n" + "Give the output in a markdown format and ask the user if they want to schedule the event if relevant to the context."))
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
@@ -640,9 +682,9 @@ class Model:
             print("Image description", image_response)
 
         # Get the headers
-        city = request.headers.get("x-vercel-ip-city", "Unknown")
-        region = request.headers.get("x-vercel-ip-country-region", "Unknown")
-        country = request.headers.get("x-vercel-ip-country", "Unknown")
+        city = request.headers.get("x-vercel-ip-city", "NYC")
+        region = request.headers.get("x-vercel-ip-country-region", "New York")
+        country = request.headers.get("x-vercel-ip-country", "USA")
 
         print(f"City: {city}, Region: {region}, Country: {country}")
 
