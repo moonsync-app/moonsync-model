@@ -240,7 +240,7 @@ class Model:
             "{instruction_str}\n"
             "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
             "IMPORTANT - Always get the 'date' column for any query\n"
-            "You only have data till the date "
+            "IMPORTANT - You only have data till the date "
             + str(self.df.iloc[-1]["date"])
             + " Always use the past data to make future predictions\n"
             "Query: {query_str}\n\n"
@@ -365,7 +365,7 @@ class Model:
             metadata=ToolMetadata(
                 name="biometrics",
                 # TODO: make a decision to remove the phase from prompt
-                description="Use this to get relevant biometric data relevant to the query. Always get the user's menstrual_phase. You have access to the following parameters - "
+                description="Use this to get relevant body parameter data relevant to the query. Always get the user's menstrual_phase. You have access to the following parameters - "
                 "'date', 'recovery_score', 'activity_score', 'sleep_score',"
                 "'stress_data', 'number_steps', 'total_burned_calories',"
                 "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
@@ -391,6 +391,7 @@ class Model:
         * You can generate multiple sub questions for each tool
         * Tools must be specified by their name, not their description
         * You must not use a tool if you don't think it's relevant
+        * Always use the 'biometrics' tool to get the menstrual phase of the user but you can use this tool again if you think it's relevant.
         
         Only Output the list of sub questions by calling the SubQuestionList function, nothing else.
 
@@ -585,7 +586,7 @@ class Model:
         curr_history = [
             ChatMessage(
                 role=MessageRole.SYSTEM,
-                content=self.SYSTEM_PROMPT + self.content_template,
+                content=self.SYSTEM_PROMPT 
             )
         ]
         for message in messages:
@@ -593,7 +594,7 @@ class Model:
             content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
 
-        curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt + "\n" + "Give the output in a markdown format and ask the user if they want to schedule the event if relevant to the context."))
+        curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt + "\n" + self.content_template +  "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context."))
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
@@ -665,17 +666,23 @@ class Model:
             api_key = os.environ["AZURE_MULTI_MODAL_API_KEY"]
             azure_endpoint = os.environ["AZURE_MULTI_MODAL_ENDPOINT"]
 
-            azure_openai_mm_llm = AzureOpenAIMultiModal(
-                model="gpt-4-vision-preview",
-                deployment_name="moonsync-vision",
-                api_key=api_key,
-                azure_endpoint=azure_endpoint,
-                api_version="2023-10-01-preview",
-                max_new_tokens=300,
-            )
+            # azure_openai_mm_llm = AzureOpenAIMultiModal(
+            #     model="gpt-4-vision-preview",
+            #     deployment_name="moonsync-vision",
+            #     api_key=api_key,
+            #     azure_endpoint=azure_endpoint,
+            #     api_version="2023-10-01-preview",
+            #     max_new_tokens=300,
+            # )
             
-            image_response = azure_openai_mm_llm.complete(
-                prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
+            # image_response = azure_openai_mm_llm.complete(
+            #     prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
+            #     image_documents=image_doc,
+            # )
+            openai_mm_llm = OpenAIMultiModal(model="gpt-4-vision-preview", max_new_tokens=300)
+
+            image_response = openai_mm_llm.complete(
+                prompt="Describe the images as an alternative text. Give me a title and a detailed description for the image.",
                 image_documents=image_doc,
             )
             
