@@ -535,7 +535,8 @@ class Model:
 
     def _inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
-        prompt = prompt + "\n" + self.phase_info
+        if len(messages) == 0:
+            prompt = prompt + "\n" + self.phase_info
         from llama_index.core.llms import ChatMessage, MessageRole
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
