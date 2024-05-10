@@ -55,7 +55,8 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-llms-azure-openai",
     "llama-index-multi-modal-llms-azure-openai",
     "langfuse",
-    "llama-index-llms-groq"
+    "llama-index-llms-groq",
+    "llama-index-embeddings-azure-openai"
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -108,6 +109,7 @@ class Model:
         from llama_index.llms.perplexity import Perplexity
         from datetime import datetime
         from llama_index.llms.azure_openai import AzureOpenAI
+        from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
         from llama_index.core.callbacks import CallbackManager
         from langfuse.llama_index import LlamaIndexCallbackHandler
         from llama_index.llms.groq import Groq
@@ -116,27 +118,35 @@ class Model:
         self.api_key = os.environ["AZURE_CHAT_API_KEY"]
         self.azure_endpoint = os.environ["AZURE_CHAT_ENDPOINT"]
         
-        # LLM Model
-        self.llm = AzureOpenAI(
-                model="gpt-4-turbo-2024-04-09",
-                deployment_name="moonsync-gpt4-turbo",
-                api_key=self.api_key,
-                azure_endpoint=self.azure_endpoint,
-                api_version="2023-10-01-preview",
-                temperature=0.1,
-        )         
-        self.small_llm = OpenAI(model="gpt-3.5-turbo", temperature=0.1)
+        # # LLM Model
+        # self.llm = AzureOpenAI(
+        #         model="gpt-4-turbo-2024-04-09",
+        #         deployment_name="moonsync-gpt4-turbo",
+        #         api_key=self.api_key,
+        #         azure_endpoint=self.azure_endpoint,
+        #         api_version="2023-10-01-preview",
+        #         temperature=0.1,
+        # )         
+        # self.small_llm = OpenAI(model="gpt-3.5-turbo", temperature=0.1)
         # llama3-70b-8192
         self.groq = Groq(model="llama3-8b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
-        self.groq_70b = Groq(model="llama3-70b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
+        # self.groq_70b = Groq(model="llama3-70b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
         self.llm = OpenAI(model="gpt-4-turbo", temperature=0.1)
-        self.subquestion_llm = OpenAILike(model="llama3-70b-8192", 
+        self.subquestion_llm = OpenAILike(model="llama3-8b-8192", 
                                   api_base="https://api.groq.com/openai/v1", 
                                   api_key=os.environ["GROQ_API_KEY"], 
                                   temperature=0.1,
                                   is_function_calling_model=True,
                                   is_chat_model=True
                                 )
+        
+        self.embed_model = AzureOpenAIEmbedding(
+            model="text-embedding-ada-002",
+            deployment_name="embedding-model",
+            api_key=self.api_key,
+            azure_endpoint=self.azure_endpoint,
+            api_version="2023-10-01-preview",
+        )
  
         langfuse_callback_handler = LlamaIndexCallbackHandler()
         Settings.callback_manager = CallbackManager([langfuse_callback_handler])
@@ -154,6 +164,7 @@ class Model:
         )
 
         Settings.llm = self.llm
+        Settings.embed_model = self.embed_model
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
