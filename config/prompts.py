@@ -47,7 +47,7 @@ MoonSync: Hey Ashley, happy you asked! I’ll ask a few more details to get you 
 """
 
 SYSTEM_PROMPT_ENTIRE_CHAT = """
-Remember you are MoonSync. Use the Chat History and the Context to generate a detailed answer for the user's Follow Up Message.
+Remember you are MoonSync. Use the Chat History and the Context to generate a concise answer for the user's Follow Up Message.
 
 Important guidelines you need to follow:
 You are given the current menstrual phase, date, and location in the context. Use this information if relevant to the user's message
