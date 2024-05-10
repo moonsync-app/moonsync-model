@@ -111,6 +111,7 @@ class Model:
         from llama_index.core.callbacks import CallbackManager
         from langfuse.llama_index import LlamaIndexCallbackHandler
         from llama_index.llms.groq import Groq
+        from llama_index.llms.openai_like import OpenAILike
         
         self.api_key = os.environ["AZURE_CHAT_API_KEY"]
         self.azure_endpoint = os.environ["AZURE_CHAT_ENDPOINT"]
@@ -129,6 +130,13 @@ class Model:
         self.groq = Groq(model="llama3-8b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
         self.groq_70b = Groq(model="llama3-70b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
         self.llm = OpenAI(model="gpt-4-turbo", temperature=0.1)
+        self.subquestion_llm = OpenAILike(model="llama3-70b-8192", 
+                                  api_base="https://api.groq.com/openai/v1", 
+                                  api_key=os.environ["GROQ_API_KEY"], 
+                                  temperature=0.1,
+                                  is_function_calling_model=True,
+                                  is_chat_model=True
+                                )
  
         langfuse_callback_handler = LlamaIndexCallbackHandler()
         Settings.callback_manager = CallbackManager([langfuse_callback_handler])
@@ -453,7 +461,7 @@ class Model:
                 return question_list.items
             
         question_gen = CustomOpenAIQuestionGenerator.from_defaults(
-            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.llm
+            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.subquestion_llm
         )
 
         self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
