@@ -389,9 +389,8 @@ class Model:
         * The sub questions should be relevant to the user question
         * The sub questions should be answerable by the tools provided
         * You can generate multiple sub questions for each tool
+        * Always use the 'biometrics' tool to get the user's menstrual phase
         * Tools must be specified by their name, not their description
-        * You must not use a tool if you don't think it's relevant
-        * Always use the 'biometrics' tool to get the menstrual phase of the user but you can use this tool again if you think it's relevant.
         
         Only Output the list of sub questions by calling the SubQuestionList function, nothing else.
 
@@ -482,7 +481,7 @@ class Model:
         ]
         self.day_name = day_names[day_of_week]
 
-        self.content_template = f"\nImportant information:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
+        self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
