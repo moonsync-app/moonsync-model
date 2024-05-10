@@ -594,7 +594,8 @@ class Model:
             content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
 
-        curr_history.append(ChatMessage(role=MessageRole.USER, content=prompt + "\n" + self.content_template +  "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context."))
+        curr_history.append(ChatMessage(role=MessageRole.USER, 
+                                        content=prompt + "\n" + self.content_template +  "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context. Give a short and concise answer."))
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
