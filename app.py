@@ -263,10 +263,27 @@ class Model:
         self.SYSTEM_PROMPT = SYSTEM_PROMPT
 
         # Text QA Prompt
+        # Get the current date
+        self.current_date = datetime.strptime(datetime.today().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
+        timestamp = datetime.fromisoformat(str(self.df.iloc[-1]["date"]))
+        print("Current date: ", self.current_date)
+        day_of_week = self.current_date.weekday()
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+        self.day_name = day_names[day_of_week]
+        self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
+
         chat_text_qa_msgs = [
             ChatMessage(
                 role=MessageRole.SYSTEM,
-                content=SYSTEM_PROMPT_ENTIRE_CHAT,
+                content=SYSTEM_PROMPT_ENTIRE_CHAT + "\n" + self.content_template,
             ),
             ChatMessage(
                 role=MessageRole.USER,
@@ -391,7 +408,7 @@ class Model:
         * You can generate multiple sub questions for each tool
         * Always use the 'biometrics' tool to get the user's menstrual phase
         * Tools must be specified by their name, not their description
-        * Strictly, create a maximum of 6 sub questions and do not use the name of the tool in the sub question.
+        # * Strictly, create a maximum of 6 sub questions and do not use the name of the tool in the sub question.
         
         Only Output the list of sub questions by calling the SubQuestionList function, nothing else.
 
@@ -466,23 +483,6 @@ class Model:
             """
         )
 
-        # Get the current date
-        timestamp = datetime.fromisoformat(str(self.df.iloc[-1]["date"]))
-        self.current_date = datetime.strptime(datetime.today().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
-        print("Current date: ", self.current_date)
-        day_of_week = self.current_date.weekday()
-        day_names = [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
-        self.day_name = day_names[day_of_week]
-
-        self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
@@ -615,7 +615,7 @@ class Model:
         curr_history.append(
             ChatMessage(
                 role=MessageRole.USER,
-                content="Very important - The timezone is EDT (UTC−05:00) and the location is New York City. If there are no attendees, please use a empty list for attendees. Always get the current date using get_date function",
+                content="Very important - The timezone is EST (UTC−05:00) and the location is New York City. If there are no attendees, please use a empty list for attendees. Always get the current date using get_date function",
             )
         )
         tool_spec = GoogleCalendarToolSpec()
