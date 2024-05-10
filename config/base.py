@@ -7,6 +7,6 @@ OPENAI_MODEL = "gpt-4-turbo"
 OPENAI_MODEL_TEMPERATURE = 0.1
 
 PPLX_MODEL = "llama-3-sonar-large-32k-online"
-PPLX_MODEL_TEMPERATURE = 0.3
+PPLX_MODEL_TEMPERATURE = 0.1
 
 WEATHER_API_URL = "http://api.weatherapi.com/v1/current.json"

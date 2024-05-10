@@ -391,6 +391,7 @@ class Model:
         * You can generate multiple sub questions for each tool
         * Always use the 'biometrics' tool to get the user's menstrual phase
         * Tools must be specified by their name, not their description
+        * Strictly, create a maximum of 6 sub questions and do not use the name of the tool in the sub question.
         
         Only Output the list of sub questions by calling the SubQuestionList function, nothing else.
 
@@ -436,7 +437,7 @@ class Model:
                 return question_list.items
             
         question_gen = CustomOpenAIQuestionGenerator.from_defaults(
-            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.llm
+            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.small_llm
         )
 
         self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
@@ -614,14 +615,14 @@ class Model:
         curr_history.append(
             ChatMessage(
                 role=MessageRole.USER,
-                content="The timezone is EST and the location is New York City. If there are no attendees, please use a empty list for attendees. Always get the current date using get_date function",
+                content="Very important - The timezone is EDT (UTC−05:00) and the location is New York City. If there are no attendees, please use a empty list for attendees. Always get the current date using get_date function",
             )
         )
         tool_spec = GoogleCalendarToolSpec()
         self.agent = OpenAIAgent.from_tools(
             tool_spec.to_tool_list(),
             verbose=True,
-            llm=OpenAI(model="gpt-4-turbo", temperature=0),
+            llm=OpenAI(model="gpt-4-turbo", temperature=0.1),
             chat_history=curr_history,
         )
         response = self.agent.stream_chat(prompt)
