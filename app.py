@@ -50,7 +50,7 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "terra-python~=0.0.12",
     "llama-index-llms-perplexity~=0.1.3",
     "llama-index-question-gen-guidance~=0.1.2",
-    "llama-index-tools-google==0.1.4",
+    "llama-index-tools-google",
     "llama-index-multi-modal-llms-openai",
     "llama-index-llms-azure-openai",
     "llama-index-multi-modal-llms-azure-openai",
@@ -279,11 +279,12 @@ class Model:
         ]
         self.day_name = day_names[day_of_week]
         self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
+        self.phase_info = f"\nPlease use my current mensural phase: {self.df.iloc[-1]['menstrual_phase']}"
 
         chat_text_qa_msgs = [
             ChatMessage(
                 role=MessageRole.SYSTEM,
-                content=SYSTEM_PROMPT_ENTIRE_CHAT + "\n" + self.content_template,
+                content=SYSTEM_PROMPT_ENTIRE_CHAT,
             ),
             ChatMessage(
                 role=MessageRole.USER,
@@ -392,7 +393,7 @@ class Model:
         )
 
         SUB_QUESTION_PROMPT_TMPL = """\
-        You are a world class state of the art agent.
+        You are a world class state of the art agent who specializes in women's menstrual health and related topics.
 
         You have access to multiple tools, each representing a different data source or API.
         Each of the tools has a name and a description, formatted as a JSON dictionary.
@@ -406,10 +407,8 @@ class Model:
         * The sub questions should be relevant to the user question
         * The sub questions should be answerable by the tools provided
         * You can generate multiple sub questions for each tool
-        * Always use the 'biometrics' tool to get the user's menstrual phase
         * Tools must be specified by their name, not their description
-        # * Strictly, create a maximum of 6 sub questions and do not use the name of the tool in the sub question.
-        
+                
         Only Output the list of sub questions by calling the SubQuestionList function, nothing else.
 
         ## Tools
@@ -454,7 +453,7 @@ class Model:
                 return question_list.items
             
         question_gen = CustomOpenAIQuestionGenerator.from_defaults(
-            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.small_llm
+            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.llm
         )
 
         self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
@@ -517,6 +516,7 @@ class Model:
 
     def _inference(self, prompt: str, messages):
         print("Prompt: ", prompt)
+        prompt = prompt + "\n" + self.phase_info
         from llama_index.core.llms import ChatMessage, MessageRole
         from llama_index.core.chat_engine import CondenseQuestionChatEngine
         from typing import List
@@ -595,7 +595,7 @@ class Model:
             curr_history.append(ChatMessage(role=role, content=content))
 
         curr_history.append(ChatMessage(role=MessageRole.USER, 
-                                        content=prompt + "\n" + self.content_template +  "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context. Give a short and concise answer."))
+                                        content=prompt + "\n" + self.content_template +  "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context. STRICTLY FOLLOW - Give a short and concise answer."))
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
@@ -616,7 +616,7 @@ class Model:
         curr_history.append(
             ChatMessage(
                 role=MessageRole.USER,
-                content="Very important - The timezone is EST (UTC−05:00) and the location is New York City. If there are no attendees, please use a empty list for attendees. Always get the current date using get_date function",
+                content=f"Very important - The timezone is EST (UTC−05:00) and the location is New York City. Current Date: {self.current_date}",
             )
         )
         tool_spec = GoogleCalendarToolSpec()
