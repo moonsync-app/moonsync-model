@@ -298,7 +298,7 @@ class Model:
         ]
         self.day_name = day_names[day_of_week]
         self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
-        self.phase_info = f"\nPlease use my current mensural phase when asking the query: {self.df.iloc[-1]['menstrual_phase']}"
+        self.phase_info = f"My current mensural phase is: {self.df.iloc[-1]['menstrual_phase']}"
 
         chat_text_qa_msgs = [
             ChatMessage(
@@ -402,7 +402,7 @@ class Model:
             metadata=ToolMetadata(
                 name="biometrics",
                 # TODO: make a decision to remove the phase from prompt
-                description="Use this to get relevant body parameter data relevant to the query. Always get the user's menstrual_phase. You have access to the following parameters - "
+                description="Use this to get relevant biometrics (health parameters) data relevant to the query. Always get the user's menstrual_phase. You have access to the following parameters - "
                 "'date', 'recovery_score', 'activity_score', 'sleep_score',"
                 "'stress_data', 'number_steps', 'total_burned_calories',"
                 "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
