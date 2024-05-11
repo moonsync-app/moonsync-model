@@ -298,7 +298,7 @@ class Model:
         ]
         self.day_name = day_names[day_of_week]
         self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
-        self.phase_info = f"\nPlease use my current mensural phase: {self.df.iloc[-1]['menstrual_phase']}"
+        self.phase_info = f"\nPlease use my current mensural phase when asking the query: {self.df.iloc[-1]['menstrual_phase']}"
 
         chat_text_qa_msgs = [
             ChatMessage(
