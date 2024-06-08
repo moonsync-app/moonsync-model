@@ -175,6 +175,11 @@ class Model:
 
         Settings.llm = self.llm
         Settings.embed_model = self.embed_model
+
+        #TERRA ENVIRONMENT VARIABLES
+        self.TERRA_DEV_ID = os.environ["TERRA_DEV_ID"]
+        self.TERRA_API_KEY = os.environ["TERRA_API_KEY"]
+
         # Pincone Indexes
         mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
         general_index = pc.Index("moonsync-index-general")
@@ -832,15 +837,10 @@ class Model:
     
     @web_endpoint(method="POST", label="init-biometrics")
     def initial_biometric_data_load(self, request: Request, item: Dict):
-        import os
-        import asyncio
-
         user_id = item["user_id"]        
-        DEV_ID = os.environ["TERRA_DEV_ID"]
-        API_KEY = os.environ["TERRA_API_KEY"]
 
         # Get the biometric data
-        get_onboarding_data(DEV_ID, API_KEY, user_id, self.supabase)
+        get_onboarding_data(self.TERRA_DEV_ID, self.TERRA_API_KEY, user_id, self.supabase)
 
         response_json = {
             "status" : "complete"
