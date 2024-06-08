@@ -30,6 +30,8 @@ from config.prompts import (
     SYSTEM_PROMPT_ENTIRE_CHAT,
 )
 
+from utils.biometrics import get_onboarding_data, get_dashboard_data
+
 moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "arize-phoenix[evals]~=3.22.0",
     "gcsfs~=2024.3.1",
@@ -56,7 +58,8 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "llama-index-multi-modal-llms-azure-openai",
     "langfuse",
     "llama-index-llms-groq",
-    "llama-index-embeddings-azure-openai"
+    "llama-index-embeddings-azure-openai",
+    "supabase"
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -114,6 +117,13 @@ class Model:
         from langfuse.llama_index import LlamaIndexCallbackHandler
         from llama_index.llms.groq import Groq
         from llama_index.llms.openai_like import OpenAILike
+
+        #SUPABASE SETUP 
+        from supabase import create_client, Client
+
+        url: str = os.environ["SUPABASE_URL"]
+        key: str = os.environ["SUPABASE_KEY"]
+        self.supabase: Client = create_client(url, key)
         
         self.api_key = os.environ["AZURE_CHAT_API_KEY"]
         self.azure_endpoint = os.environ["AZURE_CHAT_ENDPOINT"]
@@ -277,7 +287,7 @@ class Model:
         # setup token.json for gcal
         token_json = "/volumes/moonsync/google_credentials/token.json"
         destination_path = "token.json"
-        shutil.move(token_json, destination_path)
+        shutil.copy(token_json, destination_path)
 
         self.SYSTEM_PROMPT = SYSTEM_PROMPT
 
@@ -792,7 +802,7 @@ class Model:
             print(f"Location: {location}")
             print(f"Condition: {condition}")
             print(f"Current temperature: {temp_f}°F")
-        else:
+        else: 
             print("Error fetching weather data")
 
         return {"location": location, "condition": condition, "temp_f": temp_f}
@@ -818,4 +828,53 @@ class Model:
             "body_temperature": round(temperature, 2),
         }
         response_json.update(weather_data)
+        return response_json
+    
+    @web_endpoint(method="POST", label="init-biometrics")
+    def initial_biometric_data_load(self, request: Request, item: Dict):
+        import os
+        import asyncio
+
+        user_id = item["user_id"]        
+        DEV_ID = os.environ["TERRA_DEV_ID"]
+        API_KEY = os.environ["TERRA_API_KEY"]
+
+        # Get the biometric data
+        get_onboarding_data(DEV_ID, API_KEY, user_id, self.supabase)
+
+        response_json = {
+            "status" : "complete"
+        }
+
+        return response_json
+    
+    @web_endpoint(method="POST", label="dashboard-biometrics")
+    def dasboard_biometric_data_load(self, request: Request, item: Dict):
+        import os
+
+        user_id = item["user_id"]        
+        DEV_ID = os.environ["TERRA_DEV_ID"]
+        API_KEY = os.environ["TERRA_API_KEY"]
+
+        #TODO - Update menstrual phase
+        menstrual_phase = "Follicular"
+
+        sleep, temperature = get_dashboard_data(DEV_ID, API_KEY, user_id)
+        print('[DASHBOARD DATA]', sleep, temperature)
+        m, _ = divmod(sleep, 60)
+        hours, mins = divmod(m, 60)
+
+        sleep = f"{hours} hours {mins} mins"
+
+        weather_data = self._get_weather()
+
+        response_json = {
+            "status" : "complete",
+            "sleep": sleep,
+            "body_temperature": round(temperature if temperature else 0 + 98.6, 2),
+            "menstrual_phase": menstrual_phase
+        }
+
+        response_json.update(weather_data)
+
         return response_json
