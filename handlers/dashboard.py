@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from typing import List, Any, Optional
+from typing import Any, Optional
 
 import requests
-import os
 
 from datetime import datetime
 

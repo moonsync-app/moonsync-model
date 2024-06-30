@@ -9,31 +9,22 @@ from modal import (
 )
 
 from os import environ
-
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any
+import shutil
+from datetime import datetime
+from llama_index.core import Settings
+from llama_index.core.callbacks import CallbackManager
+from langfuse.llama_index import LlamaIndexCallbackHandler
+from supabase import create_client, Client
 
 from config.base import (
     MODAL_CPU,
     MODAL_MEMORY,
     MODAL_CONTAINER_IDLE_TIMEOUT,
-    OPENAI_MODEL,
-    OPENAI_MODEL_TEMPERATURE,
     PPLX_MODEL,
     PPLX_MODEL_TEMPERATURE,
-    WEATHER_API_URL,
-)
-
-from config.prompts import (
-    SOURCE_QA_PROMPT_SYSTEM,
-    SOURCE_QA_PROMPT_USER,
-    SYSTEM_PROMPT,
-    SYSTEM_PROMPT_ENTIRE_CHAT,
-    SUB_QUESTION_PROMPT_TMPL,
-    REFINE_SYSTEM_PROMPT,
-    REFINE_USER_PROMPT,
-    FORWARD_PROMPT,
 )
 
 from models import (
@@ -49,8 +40,6 @@ from handlers import (
     DashBoardHandler,
     OnboardingHandler,
 )
-
-from utils.biometrics import get_onboarding_data, get_dashboard_data
 
 moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "arize-phoenix[evals]~=3.22.0",
@@ -104,41 +93,23 @@ class Model:
 
     @enter()
     def enter(self):
-        import os
-        import shutil
-        from llama_index.core import Settings
-        from llama_index.core.prompts import (
-            ChatPromptTemplate,
-        )
-
-        from llama_index.core.llms import ChatMessage, MessageRole
-        from datetime import datetime
-        from llama_index.core.callbacks import CallbackManager
-        from langfuse.llama_index import LlamaIndexCallbackHandler
 
         # SUPABASE SETUP
-        from supabase import create_client, Client
-
-        self.SYSTEM_PROMPT = SYSTEM_PROMPT
-
-        url: str = os.environ["SUPABASE_URL"]
-        key: str = os.environ["SUPABASE_KEY"]
-
-        # TODO: see the use case for this
-        self.supabase: Client = create_client(url, key)
+        supabase_url: str = environ["SUPABASE_URL"]
+        supabase_key: str = environ["SUPABASE_KEY"]
+        self.supabase: Client = create_client(supabase_url, supabase_key)
 
         self.groq = LLMModel.get_groq_model(
             model="llama3-8b-8192", api_key=environ["GROQ_API_KEY"]
         )
         self.llm = LLMModel.get_openai_model(
-            model="gpt-4-turbo", api_key=environ["OPENAI_API_KEY"]
+            model="gpt-4o", api_key=environ["OPENAI_API_KEY"]
         )
 
         self.subquestion_llm = LLMModel.get_openai_like_model(
             model="llama3-8b-8192",
             api_base="https://api.groq.com/openai/v1",
             api_key=environ["GROQ_API_KEY"],
-            temperature=0.1,
             is_function_calling_model=True,
             is_chat_model=True,
         )
@@ -164,15 +135,15 @@ class Model:
         Settings.callback_manager = CallbackManager([langfuse_callback_handler])
 
         # Init Pinecone
-        api_key = os.environ["PINECONE_API_KEY"]
+        api_key = environ["PINECONE_API_KEY"]
         vector_db = VectorDB(api_key=api_key)
 
         Settings.llm = self.llm
         Settings.embed_model = self.embed_model
 
         # TERRA ENVIRONMENT VARIABLES
-        self.TERRA_DEV_ID = os.environ["TERRA_DEV_ID"]
-        self.TERRA_API_KEY = os.environ["TERRA_API_KEY"]
+        self.TERRA_DEV_ID = environ["TERRA_DEV_ID"]
+        self.TERRA_API_KEY = environ["TERRA_API_KEY"]
 
         # setup token.json for gcal
         token_json = "/volumes/moonsync/google_credentials/token.json"
@@ -192,12 +163,12 @@ class Model:
         # Create Query Engines
         query_engines = QueryEngine.get_vector_query_engines(
             vector_indexes=vector_indexes,
-            llm=self.groq,
+            llm=self.llm,
             similarity_top_k=2,
         )
         dashboard_data_query_engines = QueryEngine.get_dashboard_query_engines(
             vector_indexes=vector_indexes,
-            llm=self.groq,
+            llm=self.llm,
             similarity_top_k=2,
         )
         (
@@ -276,7 +247,7 @@ Current Location: New York City
         query_engine_tools = QueryEngine.get_query_engine_tools(tools_data)
 
         self.sub_question_query_engine = QueryEngine.get_subquestion_query_engine(
-            query_engine_tools=query_engine_tools, subquestion_llm=self.subquestion_llm
+            query_engine_tools=query_engine_tools, subquestion_llm=self.llm
         )
 
         self.chat_engine = QueryEngine.get_chat_engine(

@@ -3,7 +3,6 @@ from typing import List, Any
 from llama_index.tools.google import GoogleCalendarToolSpec
 from llama_index.agent.openai import OpenAIAgent
 from llama_index.core.llms import ChatMessage, MessageRole
-from llama_index.llms.openai import OpenAI
 
 
 @dataclass
