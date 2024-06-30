@@ -30,9 +30,13 @@ from config.prompts import (
     SOURCE_QA_PROMPT_USER,
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_ENTIRE_CHAT,
+    SUB_QUESTION_PROMPT_TMPL,
+    REFINE_SYSTEM_PROMPT,
+    REFINE_USER_PROMPT,
+    FORWARD_PROMPT,
 )
 
-from model import LLMModel, VectorDB, QueryEngine
+from model import LLMModel, VectorDB, QueryEngine, CustomCondenseQuestionChatEngine
 
 
 from utils.biometrics import get_onboarding_data, get_dashboard_data
@@ -132,6 +136,8 @@ class Model:
         # SUPABASE SETUP
         from supabase import create_client, Client
 
+        self.SYSTEM_PROMPT = SYSTEM_PROMPT
+
         url: str = os.environ["SUPABASE_URL"]
         key: str = os.environ["SUPABASE_KEY"]
 
@@ -185,6 +191,11 @@ class Model:
         self.TERRA_DEV_ID = os.environ["TERRA_DEV_ID"]
         self.TERRA_API_KEY = os.environ["TERRA_API_KEY"]
 
+        # setup token.json for gcal
+        token_json = "/volumes/moonsync/google_credentials/token.json"
+        destination_path = "token.json"
+        shutil.copy(token_json, destination_path)
+
         # Pincone Indexes
         vector_indexes = vector_db.get_vector_indexes(
             [
@@ -234,70 +245,20 @@ class Model:
 
         empty_query_engine = EmptyIndex().as_query_engine()
 
-        # probably can mounted as modal volume
-        biometric_data_latest = "/volumes/moonsync/data/biometric_data_latest.csv"
-        self.df = pd.read_csv(biometric_data_latest)
-        self.df["date"] = self.df["date"].apply(pd.to_datetime)
-        self.df.rename(
-            columns={
-                "duration_in_bed_seconds_data": "duration_in_bed",
-                "duration_deep_sleep": "deep_sleep_duration",
-            },
-            inplace=True,
-        )
-        print(self.df.head())
-
-        # Pandas Query Engine
-        # TODO update the date
-        DEFAULT_PANDAS_TMPL = (
-            "You are working with a pandas dataframe in Python.\n"
-            "The name of the dataframe is `df`.\n"
-            "This is the result of `print(df.head())`:\n"
-            "{df_str}\n\n"
-            "Follow these instructions:\n"
-            "{instruction_str}\n"
-            "Scrictly use these columns name - date, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, avg_saturation_percentage, avg_hr_bpm, resting_hr_bpm, duration_in_bed, deep_sleep_duration, temperature_delta, menstrual_phase\n"
-            "IMPORTANT - Always get the 'date' column for any query\n"
-            "IMPORTANT - You only have data till the date "
-            + str(self.df.iloc[-1]["date"])
-            + " Always use the past data to make future predictions\n"
-            "Query: {query_str}\n\n"
-            "Expression:"
-        )
-
-        DEFAULT_PANDAS_PROMPT = PromptTemplate(
-            DEFAULT_PANDAS_TMPL, prompt_type=PromptType.PANDAS
-        )
-
-        pandas_query_engine = PandasQueryEngine(
-            df=self.df, verbose=True, pandas_prompt=DEFAULT_PANDAS_PROMPT, llm=self.llm
-        )
-
         # SQL Query Engine
-        url = os.environ["SUPABASE_DB_URL"]
-        engine = create_engine(url, future=True)
-        metadata_obj = MetaData()
-        metadata_obj.create_all(engine)
-        sql_database = SQLDatabase(engine, include_tables=["user_biometrics"])
-        sql_query_engine = NLSQLTableQueryEngine(
-            sql_database=sql_database,
+        db_url = environ["SUPABASE_DB_URL"]
+        sql_query_engine = QueryEngine.get_sql_query_engine(
+            db_url=db_url,
             tables=["user_biometrics"],
             llm=self.llm,
         )
 
-        # setup token.json for gcal
-        token_json = "/volumes/moonsync/google_credentials/token.json"
-        destination_path = "token.json"
-        shutil.copy(token_json, destination_path)
-
-        self.SYSTEM_PROMPT = SYSTEM_PROMPT
-
         # Text QA Prompt
         # Get the current date
+        # TODO: refactor this
         self.current_date = datetime.strptime(
             datetime.today().strftime("%Y-%m-%d"), "%Y-%m-%d"
         ).date()
-        timestamp = datetime.fromisoformat(str(self.df.iloc[-1]["date"]))
         print("Current date: ", self.current_date)
         day_of_week = self.current_date.weekday()
         day_names = [
@@ -310,261 +271,55 @@ class Model:
             "Sunday",
         ]
         self.day_name = day_names[day_of_week]
-        self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
-        self.phase_info = (
-            f"My current mensural phase is: {self.df.iloc[-1]['menstrual_phase']}"
-        )
+        # TODO: change this to get user specific data - fix self.df.iloc[-1]['menstrual_phase']
+        self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: Follicular \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
+        self.phase_info = f"My current mensural phase is: Follicular"
 
-        chat_text_qa_msgs = [
-            ChatMessage(
-                role=MessageRole.SYSTEM,
-                content=SYSTEM_PROMPT_ENTIRE_CHAT,
-            ),
-            ChatMessage(
-                role=MessageRole.USER,
-                content=(
-                    "Context information is below.\n"
-                    "---------------------\n"
-                    "{context_str}\n"
-                    "---------------------\n"
-                    "Given the context information and not prior knowledge, "
-                    "answer the query.\n"
-                    "IMPORTANT: Include the list of sources of the context in the end of your final answer if you are using that information\n"
-                    "Query: {query_str}\n"
-                    "Answer: "
-                ),
-            ),
-        ]
-        text_qa_template = ChatPromptTemplate(chat_text_qa_msgs)
-
-        # Refine Prompt
-        chat_refine_msgs = [
-            ChatMessage(
-                role=MessageRole.SYSTEM,
-                content=(
-                    "You are an expert Q&A system that strictly operates in two modes "
-                    "when refining existing answers:\n"
-                    "1. **Rewrite** an original answer using the new context.\n"
-                    "2. **Repeat** the original answer if the new context isn't useful.\n"
-                    "Never reference the original answer or context directly in your answer.\n"
-                    "When in doubt, just repeat the original answer."
-                    "IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
-                ),
-            ),
-            ChatMessage(
-                role=MessageRole.USER,
-                content=(
-                    "IMPORTANT - Include the list of sources of the context in the end of your final answer if you are using that information\n"
-                    "New Context: {context_msg}\n"
-                    "Query: {query_str}\n"
-                    "Original Answer: {existing_answer}\n"
-                    "New Answer: "
-                ),
-            ),
-        ]
-        refine_template = ChatPromptTemplate(chat_refine_msgs)
-
-        response_synthesizer = get_response_synthesizer(
-            text_qa_template=text_qa_template,
-            refine_template=refine_template,
-            use_async=False,
-            streaming=True,
-        )
-
-        """### Create tools for each category"""
-        mood_feeling_tool = QueryEngineTool(
-            query_engine=mood_feeling_query_engine,
-            metadata=ToolMetadata(
-                name="mood/feeling",
-                description="Useful for questions related to women's mood and feelings",
-            ),
-        )
-
-        diet_nutrition_tool = QueryEngineTool(
-            query_engine=diet_nutrition_query_engine,
-            metadata=ToolMetadata(
-                name="diet/nutrition",
-                description="Useful for questions related to women's diet and nutrition recommendatations",
-            ),
-        )
-
-        general_tool = QueryEngineTool(
-            query_engine=general_query_engine,
-            metadata=ToolMetadata(
-                name="general",
-                description="Useful for general questions related to women's menstrual cycle",
-            ),
-        )
-
-        fitness_wellness_tool = QueryEngineTool(
-            query_engine=fitness_wellness_query_engine,
-            metadata=ToolMetadata(
-                name="fitness/wellness",
-                description="Useful for questions related to fitness and wellness advice for women",
-            ),
-        )
-
-        default_tool = QueryEngineTool(
-            query_engine=empty_query_engine,
-            metadata=ToolMetadata(
-                name="NOTA",
-                description="Use this if none of the other tools are relevant to the query",
-            ),
-        )
-
-        biometric_tool = QueryEngineTool(
-            query_engine=pandas_query_engine,
-            metadata=ToolMetadata(
-                name="biometrics",
-                # TODO: make a decision to remove the phase from prompt
-                description="Use this to get relevant biometrics (health parameters) data relevant to the query. Always get the user's menstrual_phase. You have access to the following parameters - "
-                "'date', 'recovery_score', 'activity_score', 'sleep_score',"
-                "'stress_data', 'number_steps', 'total_burned_calories',"
-                "'avg_saturation_percentage', 'avg_hr_bpm', 'resting_hr_bpm',"
-                "'duration_in_bed', 'deep_sleep_duration',"
-                "'temperature_delta', 'menstrual_phase'",
-            ),
-        )
-
-        database_engine = QueryEngineTool(
-            query_engine=sql_query_engine,
-            metadata=ToolMetadata(
-                name="database",
-                description="Use this to get relevant biometrics (health parameters) data relevant to the query from the 'user_biometrics' SQL table."
-                "always use the terra_user_id to filter data for the given user. You have access to the following columns - "
-                "id, avg_hr_bpm, resting_hr_bpm, duration_in_bed_seconds_data, duration_deep_sleep, temperature_delta, avg_saturation_percentage, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, date, terra_user_id",
-            ),
-        )
-
-        SUB_QUESTION_PROMPT_TMPL = """\
-        You are a world class state of the art agent who specializes in women's menstrual health and related topics.
-
-        You have access to multiple tools, each representing a different data source or API.
-        Each of the tools has a name and a description, formatted as a JSON dictionary.
-        The keys of the dictionary are the names of the tools and the values are the \
-        descriptions.
-        Your purpose is to help answer a complex user question by generating a list of sub \
-        questions that can be answered by the tools.
-
-        These are the guidelines you consider when completing your task:
-        * Be as specific as possible
-        * The sub questions should be relevant to the user question
-        * The sub questions should be answerable by the tools provided
-        * You can generate multiple sub questions for each tool
-        * Tools must be specified by their name, not their description
-                
-        Only Output the list of sub questions by calling the SubQuestionList function, nothing else.
-
-        ## Tools
-        ```json
-        {tools_str}
-        ```
-
-        ## User Question
-        {query_str}
-        """
-        from llama_index.core.question_gen.prompts import build_tools_text
-        from typing import List, Optional, Sequence, cast
-        from llama_index.core.llms.llm import LLM
-        from llama_index.core.question_gen.prompts import build_tools_text
-        from llama_index.core.question_gen.types import (
-            SubQuestion,
-            SubQuestionList,
-        )
-        from llama_index.core.schema import QueryBundle
-        from llama_index.core.settings import Settings
-        from llama_index.core.tools.types import ToolMetadata
-
-        class CustomOpenAIQuestionGenerator(OpenAIQuestionGenerator):
-            def generate(
-                self, tools: Sequence[ToolMetadata], query: QueryBundle
-            ) -> List[SubQuestion]:
-                tools_str = build_tools_text(tools)
-                query_str = query.query_str
-                question_list = cast(
-                    SubQuestionList,
-                    self._program(
-                        query_str=query_str.split("<Follow Up Message>")[1],
-                        tools_str=tools_str,
-                    ),
-                )
-                return question_list.items
-
-            async def agenerate(
-                self, tools: Sequence[ToolMetadata], query: QueryBundle
-            ) -> List[SubQuestion]:
-                tools_str = build_tools_text(tools)
-                query_str = query.query_str
-                question_list = cast(
-                    SubQuestionList,
-                    await self._program.acall(
-                        query_str=query_str.split("<Follow Up Message>")[1],
-                        tools_str=tools_str,
-                    ),
-                )
-                assert isinstance(question_list, SubQuestionList)
-                return question_list.items
-
-        question_gen = CustomOpenAIQuestionGenerator.from_defaults(
-            prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.subquestion_llm
-        )
-
-        self.sub_question_query_engine = SubQuestionQueryEngine.from_defaults(
-            query_engine_tools=[
-                mood_feeling_tool,
-                diet_nutrition_tool,
-                general_tool,
-                fitness_wellness_tool,
-                default_tool,
-                # biometric_tool,
-                database_engine,
-            ],
-            response_synthesizer=response_synthesizer,
-            question_gen=question_gen,
-        )
-
-        self.custom_prompt_forward_history = PromptTemplate(
-            """\
-            Just copy the chat history as is, inside the tag <Chat History> and copy the follow up message inside the tag <Follow Up Message>
-
-            <Chat History>
-            {chat_history}
-
-            <Follow Up Message>
-            {question}
-
-            """
-        )
-
-        self.chat_history = [
-            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(
-                role=MessageRole.USER,
-                content=self.content_template,
-            ),
+        tools_data = [
+            {
+                "query_engine": mood_feeling_query_engine,
+                "name": "mood/feeling",
+                "description": "Useful for questions related to women's mood and feelings",
+            },
+            {
+                "query_engine": diet_nutrition_query_engine,
+                "name": "diet/nutrition",
+                "description": "Useful for questions related to women's diet and nutrition recommendatations",
+            },
+            {
+                "query_engine": general_query_engine,
+                "name": "general",
+                "description": "Useful for general questions related to women's menstrual cycle",
+            },
+            {
+                "query_engine": fitness_wellness_query_engine,
+                "name": "fitness/wellness",
+                "description": "Useful for questions related to fitness and wellness advice for women",
+            },
+            {
+                "query_engine": empty_query_engine,
+                "name": "NOTA",
+                "description": "Use this if none of the other tools are relevant to the query",
+            },
+            {
+                "query_engine": sql_query_engine,
+                "name": "database",
+                "description": """Use this to get relevant biometrics (health parameters) data relevant to the query from the 'user_biometrics' SQL table.
+            Always use the terra_user_id to filter data for the given user. You have access to the following columns - 
+            id, avg_hr_bpm, resting_hr_bpm, duration_in_bed_seconds_data, duration_deep_sleep, temperature_delta, avg_saturation_percentage, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, date, terra_user_id
+            """,
+            },
         ]
 
-        class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
-            def _condense_question(
-                self, chat_history: List[ChatMessage], last_message: str
-            ) -> str:
-                chat_str = "<Chat History>\n"
+        query_engine_tools = QueryEngine.get_query_engine_tools(tools_data)
 
-                for message in chat_history:
-                    role = message.role
-                    content = message.content
-                    chat_str += f"{role}: {content}\n"
+        self.sub_question_query_engine = QueryEngine.get_subquestion_query_engine(
+            query_engine_tools=query_engine_tools, subquestion_llm=self.subquestion_llm
+        )
 
-                chat_str += "<Follow Up Message>\n"
-                chat_str += last_message
-
-                return chat_str
-
-        self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
+        self.chat_engine = QueryEngine.get_chat_engine(
             query_engine=self.sub_question_query_engine,
-            condense_question_prompt=self.custom_prompt_forward_history,
-            chat_history=self.chat_history,
-            verbose=True,
+            user_info_content=self.content_template,
         )
 
     def _inference(self, prompt: str, messages):
@@ -572,24 +327,6 @@ class Model:
         if len(messages) == 0:
             prompt = prompt + "\n" + self.phase_info
         from llama_index.core.llms import ChatMessage, MessageRole
-        from llama_index.core.chat_engine import CondenseQuestionChatEngine
-        from typing import List
-
-        class CustomCondenseQuestionChatEngine(CondenseQuestionChatEngine):
-            def _condense_question(
-                self, chat_history: List[ChatMessage], last_message: str
-            ) -> str:
-                chat_str = "<Chat History>\n"
-
-                for message in chat_history:
-                    role = message.role
-                    content = message.content
-                    chat_str += f"{role}: {content}\n"
-
-                chat_str += "<Follow Up Message>\n"
-                chat_str += last_message
-
-                return chat_str
 
         print("incoming messages", messages)  # role and content
         if len(messages) > 0:
@@ -608,7 +345,7 @@ class Model:
 
             self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
                 query_engine=self.sub_question_query_engine,
-                condense_question_prompt=self.custom_prompt_forward_history,
+                condense_question_prompt=FORWARD_PROMPT,
                 chat_history=curr_history,
                 verbose=True,
             )
@@ -623,7 +360,7 @@ class Model:
         ]
         self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
             query_engine=self.sub_question_query_engine,
-            condense_question_prompt=self.custom_prompt_forward_history,
+            condense_question_prompt=FORWARD_PROMPT,
             chat_history=self.chat_history,
             verbose=True,
         )
