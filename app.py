@@ -36,8 +36,13 @@ from config.prompts import (
     FORWARD_PROMPT,
 )
 
-from model import LLMModel, VectorDB, QueryEngine, CustomCondenseQuestionChatEngine
+from models import (
+    LLMModel,
+    VectorDB,
+    QueryEngine,
+)
 
+from handlers import ChatHandler, EventSchedulerHandler, ImageHandler, DashBoardHandler
 
 from utils.biometrics import get_onboarding_data, get_dashboard_data
 
@@ -93,45 +98,18 @@ class Model:
 
     @enter()
     def enter(self):
-        from pinecone import Pinecone
         import os
         import shutil
         from llama_index.core import Settings
-        from llama_index.llms.openai import OpenAI
-        from llama_index.core import VectorStoreIndex
         from llama_index.vector_stores.pinecone import PineconeVectorStore
         from llama_index.core.prompts import (
             ChatPromptTemplate,
-            PromptType,
         )
-        from llama_index.core.indices import EmptyIndex
-        from llama_index.core import get_response_synthesizer
-        from llama_index.core.query_engine import (
-            SubQuestionQueryEngine,
-        )
-        from llama_index.core.tools import QueryEngineTool, ToolMetadata
-        from llama_index.core.chat_engine import (
-            CondenseQuestionChatEngine,
-        )
+
         from llama_index.core.llms import ChatMessage, MessageRole
-        from llama_index.core import PromptTemplate
-        from llama_index.experimental.query_engine import PandasQueryEngine
-        import pandas as pd
-        from llama_index.question_gen.openai import OpenAIQuestionGenerator
-        from typing import List
-        from llama_index.llms.perplexity import Perplexity
         from datetime import datetime
-        from llama_index.llms.azure_openai import AzureOpenAI
-        from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
         from llama_index.core.callbacks import CallbackManager
         from langfuse.llama_index import LlamaIndexCallbackHandler
-        from llama_index.llms.groq import Groq
-        from llama_index.llms.openai_like import OpenAILike
-        from sqlalchemy import create_engine, MetaData
-        from llama_index.core import SQLDatabase
-        from llama_index.core.query_engine import NLSQLTableQueryEngine
-
-        # TODO: remove the above once this is complete
 
         # SUPABASE SETUP
         from supabase import create_client, Client
@@ -142,9 +120,6 @@ class Model:
         key: str = os.environ["SUPABASE_KEY"]
 
         # TODO: see the use case for this
-        self.api_key = os.environ["AZURE_CHAT_API_KEY"]
-        self.azure_endpoint = os.environ["AZURE_CHAT_ENDPOINT"]
-
         self.supabase: Client = create_client(url, key)
 
         self.groq = LLMModel.get_groq_model(
@@ -167,7 +142,7 @@ class Model:
             model="text-embedding-ada-002",
             deployment_name="embedding-model",
             api_key=environ["AZURE_CHAT_API_KEY"],
-            azure_endpoint=self.azure_endpoint,
+            azure_endpoint=environ["AZURE_CHAT_ENDPOINT"],
             api_version="2023-10-01-preview",
         )
 
@@ -243,7 +218,7 @@ class Model:
             dashboard_data_query_engines
         )
 
-        empty_query_engine = EmptyIndex().as_query_engine()
+        empty_query_engine = QueryEngine.get_empty_query_engine()
 
         # SQL Query Engine
         db_url = environ["SUPABASE_DB_URL"]
@@ -323,120 +298,43 @@ class Model:
         )
 
     def _inference(self, prompt: str, messages):
-        print("Prompt: ", prompt)
-        if len(messages) == 0:
-            prompt = prompt + "\n" + self.phase_info
-        from llama_index.core.llms import ChatMessage, MessageRole
-
-        print("incoming messages", messages)  # role and content
-        if len(messages) > 0:
-            self.chat_engine.reset()
-            curr_history = [
-                ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-                ChatMessage(
-                    role=MessageRole.USER,
-                    content=self.content_template,
-                ),
-            ]
-            for message in messages:
-                role = message["role"]
-                content = message["content"]
-                curr_history.append(ChatMessage(role=role, content=content))
-
-            self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
-                query_engine=self.sub_question_query_engine,
-                condense_question_prompt=FORWARD_PROMPT,
-                chat_history=curr_history,
-                verbose=True,
-            )
-        streaming_response = self.chat_engine.stream_chat(prompt)
-        self.chat_engine.reset()
-        self.chat_history = [
-            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
-            ChatMessage(
-                role=MessageRole.USER,
-                content=self.content_template,
-            ),
-        ]
-        self.chat_engine = CustomCondenseQuestionChatEngine.from_defaults(
-            query_engine=self.sub_question_query_engine,
-            condense_question_prompt=FORWARD_PROMPT,
-            chat_history=self.chat_history,
-            verbose=True,
+        chat_handler = ChatHandler(
+            prompt=prompt,
+            messages=messages,
+            user_info_content=self.content_template,
+            sub_question_query_engine=self.sub_question_query_engine,
+            chat_engine=self.chat_engine,
+            menstrual_phase_info=self.phase_info,
         )
-
+        self.chat_engine, streaming_response = chat_handler.run_offline()
         for token in streaming_response.response_gen:
             yield token
 
     def _online_inference(self, prompt: str, messages):
-        print("Prompt: ", prompt)
-        prompt = prompt.replace("@internet", "")
-        from llama_index.core.llms import ChatMessage, MessageRole
-
-        # TODO change current location
-        curr_history = [
-            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT)
-        ]
-        for message in messages:
-            role = message["role"]
-            content = message["content"]
-            curr_history.append(ChatMessage(role=role, content=content))
-
-        curr_history.append(
-            ChatMessage(
-                role=MessageRole.USER,
-                content=prompt
-                + "\n"
-                + self.content_template
-                + "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context. STRICTLY FOLLOW - Give a short and concise answer.",
-            )
+        chat_handler = ChatHandler(
+            prompt=prompt,
+            messages=messages,
+            user_info_content=self.content_template,
         )
+        curr_history = chat_handler.run_online()
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
 
     # Event schedule runner
     def _event_schedule_runner(self, prompt: str, messages):
-        from llama_index.tools.google import GoogleCalendarToolSpec
-        from llama_index.agent.openai import OpenAIAgent
-        from llama_index.core.llms import ChatMessage, MessageRole
-        from llama_index.llms.openai import OpenAI
-
-        curr_history = []
-        for message in messages:
-            role = message["role"]
-            content = message["content"]
-            curr_history.append(ChatMessage(role=role, content=content))
-
-        curr_history.append(
-            ChatMessage(
-                role=MessageRole.USER,
-                content=f"Very important - The timezone is EST (UTC−05:00) and the location is New York City. Current Date: {self.current_date}",
-            )
+        event_scheduler_handler = EventSchedulerHandler(
+            prompt=prompt,
+            messages=messages,
+            llm=self.llm,  # has to am OpenAI model
+            current_date=self.current_date,
         )
-        tool_spec = GoogleCalendarToolSpec()
-        self.agent = OpenAIAgent.from_tools(
-            tool_spec.to_tool_list(),
-            verbose=True,
-            llm=OpenAI(model="gpt-4-turbo", temperature=0.1),
-            chat_history=curr_history,
-        )
-        response = self.agent.stream_chat(prompt)
-        self.agent.reset()
-        response_gen = response.response_gen
+        response_gen = event_scheduler_handler.run()
         for token in response_gen:
             yield token
 
     @web_endpoint(method="POST")
     def web_inference(self, request: Request, item: Dict):
-        import io, base64
-        from PIL import Image
-        from llama_index.readers.file.image import ImageReader
-        from llama_index.multi_modal_llms.openai import OpenAIMultiModal
-        import uuid
-        from llama_index.multi_modal_llms.azure_openai import AzureOpenAIMultiModal
-        import os
-
         prompt, image_url, image_response = "", "", ""
         if isinstance(item["prompt"], list):
             for value in item["prompt"]:
@@ -449,45 +347,7 @@ class Model:
 
         messages = item["messages"]
         if image_url:
-            print("IMAGE_URL", image_url[:100])
-            id = str(uuid.uuid4())
-            extension = image_url.split(",")[0].split("/")[1].split(";")[0]
-            img = Image.open(
-                io.BytesIO(base64.decodebytes(bytes(image_url.split(",")[1], "utf-8")))
-            )
-            img.save(f"/volumes/moonsync/data/img-{id}.{extension}")
-
-            image_doc = ImageReader().load_data(
-                file=f"/volumes/moonsync/data/img-{id}.{extension}"
-            )
-            print("Image Doc", image_doc)
-
-            api_key = os.environ["AZURE_MULTI_MODAL_API_KEY"]
-            azure_endpoint = os.environ["AZURE_MULTI_MODAL_ENDPOINT"]
-
-            # azure_openai_mm_llm = AzureOpenAIMultiModal(
-            #     model="gpt-4-vision-preview",
-            #     deployment_name="moonsync-vision",
-            #     api_key=api_key,
-            #     azure_endpoint=azure_endpoint,
-            #     api_version="2023-10-01-preview",
-            #     max_new_tokens=300,
-            # )
-
-            # image_response = azure_openai_mm_llm.complete(
-            #     prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
-            #     image_documents=image_doc,
-            # )
-            openai_mm_llm = OpenAIMultiModal(
-                model="gpt-4-vision-preview", max_new_tokens=300
-            )
-
-            image_response = openai_mm_llm.complete(
-                prompt="Describe the images as an alternative text. Give me a title and a detailed description for the image.",
-                image_documents=image_doc,
-            )
-
-            print("Image description", image_response)
+            image_response = ImageHandler(image_url=image_url).run()
 
         # Get the headers
         city = request.headers.get("x-vercel-ip-city", "NYC")
@@ -527,39 +387,12 @@ class Model:
 
     @web_endpoint(method="POST", label="dashboard")
     def dashboard_details(self):
-        # prompt = item['test']
 
-        # TODO read phase from dataframe
-        phase = self.df.iloc[-1]["menstrual_phase"]
-        age = 35
-        mood_filler = "on how the user might be feeling today. one point should suggest a way to improve mood"
-        nutrition_filler = "on what the user needs to eat. one point should suggest an interesting recipe."
-        exercise_filler = "on what exercises the user should perform today"
-
-        PROMPT_TEMPLATE = """
-        Current Menstrual Phase: {phase}
-        Age: {age}
-
-        Based on the above menstrual phase and other details give me 3 concise points on seperate lines (don't add index number) and nothing else {template}
-        Answer in a friendly way and in second person perspective.
-        """
-
-        mood_resp = self.mood_feeling_qe.query(
-            PROMPT_TEMPLATE.format(phase=phase, age=age, template=mood_filler)
-        ).response
-        nutrition_resp = self.diet_nutrition_qe.query(
-            PROMPT_TEMPLATE.format(phase=phase, age=age, template=nutrition_filler)
-        ).response
-        exercise_resp = self.fitness_wellness_qe.query(
-            PROMPT_TEMPLATE.format(phase=phase, age=age, template=exercise_filler)
-        ).response
-
-        response_json = {
-            "mood_resp": mood_resp,
-            "nutrition_resp": nutrition_resp,
-            "exercise_resp": exercise_resp,
-        }
-        return response_json
+        return DashBoardHandler(
+            mood_feeling_qe=self.mood_feeling_qe,
+            diet_nutrition_qe=self.diet_nutrition_qe,
+            fitness_wellness_qe=self.fitness_wellness_qe,
+        ).run()
 
     def _get_weather(self):
         import requests

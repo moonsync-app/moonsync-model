@@ -87,7 +87,7 @@ class QueryEngine:
 
     @staticmethod
     def get_empty_query_engine():
-        return EmptyIndex.as_query_engine()
+        return EmptyIndex().as_query_engine()
 
     @staticmethod
     def get_sql_query_engine(
