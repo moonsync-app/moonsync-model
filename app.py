@@ -12,7 +12,7 @@ from os import environ
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
-from typing import Dict
+from typing import Dict, Any
 
 from config.base import (
     MODAL_CPU,
@@ -42,7 +42,13 @@ from models import (
     QueryEngine,
 )
 
-from handlers import ChatHandler, EventSchedulerHandler, ImageHandler, DashBoardHandler
+from handlers import (
+    ChatHandler,
+    EventSchedulerHandler,
+    ImageHandler,
+    DashBoardHandler,
+    OnboardingHandler,
+)
 
 from utils.biometrics import get_onboarding_data, get_dashboard_data
 
@@ -101,7 +107,6 @@ class Model:
         import os
         import shutil
         from llama_index.core import Settings
-        from llama_index.vector_stores.pinecone import PineconeVectorStore
         from llama_index.core.prompts import (
             ChatPromptTemplate,
         )
@@ -152,6 +157,9 @@ class Model:
             temperature=PPLX_MODEL_TEMPERATURE,
         )
 
+        self.terra_dev_id = environ["TERRA_DEV_ID"]
+        self.terra_api_key = environ["TERRA_API_KEY"]
+
         langfuse_callback_handler = LlamaIndexCallbackHandler()
         Settings.callback_manager = CallbackManager([langfuse_callback_handler])
 
@@ -181,26 +189,11 @@ class Model:
             ]
         )
 
-        # Update prompt to include sources
-        sources_qa_prompt = [
-            ChatMessage(
-                role=MessageRole.SYSTEM,
-                content=(SOURCE_QA_PROMPT_SYSTEM),
-            ),
-            ChatMessage(
-                role=MessageRole.USER,
-                content=(SOURCE_QA_PROMPT_USER),
-            ),
-        ]
-        sources_prompt = ChatPromptTemplate(sources_qa_prompt)
-
         # Create Query Engines
-
         query_engines = QueryEngine.get_vector_query_engines(
             vector_indexes=vector_indexes,
             llm=self.groq,
             similarity_top_k=2,
-            text_qa_template=sources_prompt,
         )
         dashboard_data_query_engines = QueryEngine.get_dashboard_query_engines(
             vector_indexes=vector_indexes,
@@ -228,26 +221,20 @@ class Model:
             llm=self.llm,
         )
 
-        # Text QA Prompt
-        # Get the current date
-        # TODO: refactor this
         self.current_date = datetime.strptime(
             datetime.today().strftime("%Y-%m-%d"), "%Y-%m-%d"
         ).date()
-        print("Current date: ", self.current_date)
-        day_of_week = self.current_date.weekday()
-        day_names = [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
-        self.day_name = day_names[day_of_week]
-        # TODO: change this to get user specific data - fix self.df.iloc[-1]['menstrual_phase']
-        self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: Follicular \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
+        self.day_name = self.current_date.strftime("%A")
+
+        self.user_date_location_info = f"""
+Important information to be considered while answering the query:
+Current Mensural Phase: Follicular
+Today's date: {self.current_date}
+Day of the week: {self.day_name}
+Current Location: New York City
+"""
+
+        # TODO: change this to get user specific data
         self.phase_info = f"My current mensural phase is: Follicular"
 
         tools_data = [
@@ -294,14 +281,14 @@ class Model:
 
         self.chat_engine = QueryEngine.get_chat_engine(
             query_engine=self.sub_question_query_engine,
-            user_info_content=self.content_template,
+            user_info_content=self.user_date_location_info,
         )
 
     def _inference(self, prompt: str, messages):
         chat_handler = ChatHandler(
             prompt=prompt,
             messages=messages,
-            user_info_content=self.content_template,
+            user_info_content=self.user_date_location_info,
             sub_question_query_engine=self.sub_question_query_engine,
             chat_engine=self.chat_engine,
             menstrual_phase_info=self.phase_info,
@@ -314,7 +301,7 @@ class Model:
         chat_handler = ChatHandler(
             prompt=prompt,
             messages=messages,
-            user_info_content=self.content_template,
+            user_info_content=self.user_date_location_info,
         )
         curr_history = chat_handler.run_online()
         resp = self.pplx_llm.stream_chat(curr_history)
@@ -333,8 +320,7 @@ class Model:
         for token in response_gen:
             yield token
 
-    @web_endpoint(method="POST")
-    def web_inference(self, request: Request, item: Dict):
+    def _process_user_query(self, item: Dict[str, Any]):
         prompt, image_url, image_response = "", "", ""
         if isinstance(item["prompt"], list):
             for value in item["prompt"]:
@@ -346,6 +332,13 @@ class Model:
             prompt = item["prompt"]
 
         messages = item["messages"]
+
+        return prompt, messages, image_url
+
+    @web_endpoint(method="POST")
+    def web_inference(self, request: Request, item: Dict):
+        prompt, messages, image_url = self._process_user_query(item)
+        image_response = None
         if image_url:
             image_response = ImageHandler(image_url=image_url).run()
 
@@ -358,7 +351,6 @@ class Model:
         terra_user_id = item.get("terra_user_id", None)
         if terra_user_id:
             prompt = prompt + f"\nTerra User ID: {terra_user_id}"
-        print(f"City: {city}, Region: {region}, Country: {country}")
 
         if "@internet" in prompt:
             return StreamingResponse(
@@ -372,14 +364,11 @@ class Model:
                 media_type="text/event-stream",
             )
 
-        if image_response != "":
-            prompt = (
-                prompt
-                + "\n"
-                + "Additional information about the image uploaded \n "
-                + image_response.text
-            )
-
+        if image_response:
+            prompt += f"""
+Additional information about the image uploaded
+{image_response.text}
+"""
         return StreamingResponse(
             self._inference(prompt=prompt, messages=messages),
             media_type="text/event-stream",
@@ -387,101 +376,44 @@ class Model:
 
     @web_endpoint(method="POST", label="dashboard")
     def dashboard_details(self):
-
-        return DashBoardHandler(
+        return DashBoardHandler().run_biometrics_cards(
             mood_feeling_qe=self.mood_feeling_qe,
             diet_nutrition_qe=self.diet_nutrition_qe,
             fitness_wellness_qe=self.fitness_wellness_qe,
-        ).run()
-
-    def _get_weather(self):
-        import requests
-        import os
-
-        api_key = os.environ["WEATHER_API_KEY"]
-        base_url = WEATHER_API_URL
-
-        params = {"key": api_key, "q": "New York City", "aqi": "no"}
-
-        response = requests.get(base_url, params=params)
-
-        if response.status_code == 200:
-            data = response.json()
-
-            location = data["location"]["name"]
-            temp_f = data["current"]["temp_f"]
-            condition = data["current"]["condition"]["text"]
-            print(f"Location: {location}")
-            print(f"Condition: {condition}")
-            print(f"Current temperature: {temp_f}°F")
-        else:
-            print("Error fetching weather data")
-
-        return {"location": location, "condition": condition, "temp_f": temp_f}
+        )
 
     @web_endpoint(method="POST", label="biometrics")
-    def biometrics_details(self):
-        # TODO read user id from body
-
-        menstrual_phase = self.df.iloc[-1]["menstrual_phase"]
-        sleep = self.df.iloc[-1]["duration_in_bed"]
-        temperature = 98.6 + self.df.iloc[-1]["temperature_delta"]
-
-        m, s = divmod(sleep, 60)
-        hours, mins = divmod(m, 60)
-
-        sleep = f"{hours} hours {mins} mins"
-
-        weather_data = self._get_weather()
-
-        response_json = {
-            "menstrual_phase": menstrual_phase,
-            "sleep": sleep,
-            "body_temperature": round(temperature, 2),
-        }
-        response_json.update(weather_data)
+    def biometrics_details(self, item: Dict[str, Any]):
+        terra_user_id = item["terra_user_id"]
+        response_json = DashBoardHandler().run_header_info(
+            terra_user_id=terra_user_id,
+            supabase=self.supabase,
+            weather_api_key=environ["WEATHER_API_KEY"],
+        )
         return response_json
 
     @web_endpoint(method="POST", label="init-biometrics")
     def initial_biometric_data_load(self, request: Request, item: Dict):
-        user_id = item["user_id"]
-
-        # Get the biometric data
-        get_onboarding_data(
-            self.TERRA_DEV_ID, self.TERRA_API_KEY, user_id, self.supabase
-        )
+        terra_user_id = item["terra_user_id"]
+        OnboardingHandler(
+            terra_user_id=terra_user_id,
+            terra_dev_id=self.terra_dev_id,
+            terra_api_key=self.terra_api_key,
+            supabase=self.supabase,
+        ).run()
 
         response_json = {"status": "complete"}
-
         return response_json
 
     @web_endpoint(method="POST", label="dashboard-biometrics")
     def dasboard_biometric_data_load(self, request: Request, item: Dict):
-        import os
-
-        user_id = item["user_id"]
-        DEV_ID = os.environ["TERRA_DEV_ID"]
-        API_KEY = os.environ["TERRA_API_KEY"]
-
-        # TODO - Update menstrual phase
-        menstrual_phase = "Follicular"
-
-        sleep, temperature = get_dashboard_data(DEV_ID, API_KEY, user_id)
-        print("[DASHBOARD DATA]", sleep, temperature)
-        m, _ = divmod(sleep, 60)
-        hours, mins = divmod(m, 60)
-
-        sleep = f"{hours} hours {mins} mins"
-
-        weather_data = self._get_weather()
-
-        response_json = {
-            "status": "complete",
-            "sleep": sleep,
-            "body_temperature": round(temperature if temperature else 0 + 98.6, 2),
-            "menstrual_phase": menstrual_phase,
-        }
-
-        response_json.update(weather_data)
-
+        terra_user_id = item["terra_user_id"]
+        response_json = DashBoardHandler().run_header_info(
+            terra_user_id=terra_user_id,
+            supabase=self.supabase,
+            weather_api_key=environ["WEATHER_API_KEY"],
+            is_onboarding=True,
+            terra_dev_id=self.terra_dev_id,
+            terra_api_key=self.terra_api_key,
+        )
         return response_json

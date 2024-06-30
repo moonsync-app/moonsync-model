@@ -2,14 +2,12 @@ from dataclasses import dataclass
 from typing import List, Any, Optional
 from llama_index.core.llms import ChatMessage, MessageRole
 
-
-from handlers.base import BaseHandler
 from config.prompts import FORWARD_PROMPT, SYSTEM_PROMPT
 from models import CustomCondenseQuestionChatEngine
 
 
 @dataclass
-class ChatHandler(BaseHandler):
+class ChatHandler:
     prompt: str
     messages: List[Any]
     user_info_content: Optional[str] = None

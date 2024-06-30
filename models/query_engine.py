@@ -25,6 +25,7 @@ from config.prompts import (
     SUB_QUESTION_PROMPT_TMPL,
     FORWARD_PROMPT,
     SYSTEM_PROMPT,
+    SOURCE_QA_PROMPT_SYSTEM,
 )
 from llama_index.core import get_response_synthesizer
 
@@ -56,13 +57,25 @@ class QueryEngine:
         vector_indexes: List[VectorStoreIndex],
         llm: str,
         similarity_top_k: int,
-        text_qa_template: ChatPromptTemplate,
     ):
+
+        sources_qa_prompt = [
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=(SOURCE_QA_PROMPT_SYSTEM),
+            ),
+            ChatMessage(
+                role=MessageRole.USER,
+                content=(SOURCE_QA_PROMPT_USER),
+            ),
+        ]
+        sources_prompt = ChatPromptTemplate(sources_qa_prompt)
+
         query_engines = [
             vector_index.as_query_engine(
                 llm=llm,
                 similarity_top_k=similarity_top_k,
-                text_qa_template=text_qa_template,
+                text_qa_template=sources_prompt,
             )
             for vector_index in vector_indexes
         ]
