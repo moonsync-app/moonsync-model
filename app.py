@@ -8,6 +8,8 @@ from modal import (
     Volume,
 )
 
+from os import environ
+
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 from typing import Dict
@@ -29,6 +31,9 @@ from config.prompts import (
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_ENTIRE_CHAT,
 )
+
+from model import LLMModel, VectorDB, QueryEngine
+
 
 from utils.biometrics import get_onboarding_data, get_dashboard_data
 
@@ -59,7 +64,8 @@ moonsync_image = Image.debian_slim(python_version="3.10").pip_install(
     "langfuse",
     "llama-index-llms-groq",
     "llama-index-embeddings-azure-openai",
-    "supabase"
+    "supabase",
+    "psycopg2-binary",
 )
 
 moonsync_volume = Volume.from_name("moonsync")
@@ -117,93 +123,77 @@ class Model:
         from langfuse.llama_index import LlamaIndexCallbackHandler
         from llama_index.llms.groq import Groq
         from llama_index.llms.openai_like import OpenAILike
+        from sqlalchemy import create_engine, MetaData
+        from llama_index.core import SQLDatabase
+        from llama_index.core.query_engine import NLSQLTableQueryEngine
 
-        #SUPABASE SETUP 
+        # TODO: remove the above once this is complete
+
+        # SUPABASE SETUP
         from supabase import create_client, Client
 
         url: str = os.environ["SUPABASE_URL"]
         key: str = os.environ["SUPABASE_KEY"]
-        self.supabase: Client = create_client(url, key)
-        
+
+        # TODO: see the use case for this
         self.api_key = os.environ["AZURE_CHAT_API_KEY"]
         self.azure_endpoint = os.environ["AZURE_CHAT_ENDPOINT"]
-        
-        # # LLM Model
-        # self.llm = AzureOpenAI(
-        #         model="gpt-4-turbo-2024-04-09",
-        #         deployment_name="moonsync-gpt4-turbo",
-        #         api_key=self.api_key,
-        #         azure_endpoint=self.azure_endpoint,
-        #         api_version="2023-10-01-preview",
-        #         temperature=0.1,
-        # )         
-        # self.small_llm = OpenAI(model="gpt-3.5-turbo", temperature=0.1)
-        # llama3-70b-8192
-        self.groq = Groq(model="llama3-8b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
-        # self.groq_70b = Groq(model="llama3-70b-8192", api_key=os.environ["GROQ_API_KEY"], temperature=0.1)
-        self.llm = OpenAI(model="gpt-4-turbo", temperature=0.1)
-        self.subquestion_llm = OpenAILike(model="llama3-8b-8192", 
-                                  api_base="https://api.groq.com/openai/v1", 
-                                  api_key=os.environ["GROQ_API_KEY"], 
-                                  temperature=0.1,
-                                  is_function_calling_model=True,
-                                  is_chat_model=True
-                                )
-        
-        self.embed_model = AzureOpenAIEmbedding(
+
+        self.supabase: Client = create_client(url, key)
+
+        self.groq = LLMModel.get_groq_model(
+            model="llama3-8b-8192", api_key=environ["GROQ_API_KEY"]
+        )
+        self.llm = LLMModel.get_openai_model(
+            model="gpt-4-turbo", api_key=environ["OPENAI_API_KEY"]
+        )
+
+        self.subquestion_llm = LLMModel.get_openai_like_model(
+            model="llama3-8b-8192",
+            api_base="https://api.groq.com/openai/v1",
+            api_key=environ["GROQ_API_KEY"],
+            temperature=0.1,
+            is_function_calling_model=True,
+            is_chat_model=True,
+        )
+
+        self.embed_model = LLMModel.get_azure_embedding_model(
             model="text-embedding-ada-002",
             deployment_name="embedding-model",
-            api_key=self.api_key,
+            api_key=environ["AZURE_CHAT_API_KEY"],
             azure_endpoint=self.azure_endpoint,
             api_version="2023-10-01-preview",
         )
- 
-        langfuse_callback_handler = LlamaIndexCallbackHandler()
-        Settings.callback_manager = CallbackManager([langfuse_callback_handler])
-        
-        # Init Pinecone
-        api_key = os.environ["PINECONE_API_KEY"]
-        pc = Pinecone(api_key=api_key)
-        
-        # self.anthropic = Anthropic(model="claude-3-opus-20240229", temperature=0.2)
-        
-        self.pplx_llm = Perplexity(
-            api_key=os.environ["PPLX_API_KEY"],
+
+        self.pplx_llm = LLMModel.get_perplexity_model(
             model=PPLX_MODEL,
+            api_key=environ["PPLX_API_KEY"],
             temperature=PPLX_MODEL_TEMPERATURE,
         )
+
+        langfuse_callback_handler = LlamaIndexCallbackHandler()
+        Settings.callback_manager = CallbackManager([langfuse_callback_handler])
+
+        # Init Pinecone
+        api_key = os.environ["PINECONE_API_KEY"]
+        vector_db = VectorDB(api_key=api_key)
 
         Settings.llm = self.llm
         Settings.embed_model = self.embed_model
 
-        #TERRA ENVIRONMENT VARIABLES
+        # TERRA ENVIRONMENT VARIABLES
         self.TERRA_DEV_ID = os.environ["TERRA_DEV_ID"]
         self.TERRA_API_KEY = os.environ["TERRA_API_KEY"]
 
         # Pincone Indexes
-        mood_feeling_index = pc.Index("moonsync-index-mood-feeling")
-        general_index = pc.Index("moonsync-index-general")
-        diet_nutrition_index = pc.Index("moonsync-index-diet-nutrition")
-        fitness_wellness_index = pc.Index("moonsync-index-fitness-wellness")
-        indexes = [
-            mood_feeling_index,
-            general_index,
-            diet_nutrition_index,
-            fitness_wellness_index,
-        ]
-
-        print("mood_feeling_index", mood_feeling_index.describe_index_stats())
-        print("general_index", general_index.describe_index_stats())
-        print("diet_nutrition", diet_nutrition_index.describe_index_stats())
-        print("fitness_wellness", fitness_wellness_index.describe_index_stats())
-
-        vector_indexes = []
-        for index in indexes:
-            vector_indexes.append(
-                VectorStoreIndex.from_vector_store(
-                    PineconeVectorStore(pinecone_index=index)
-                )
-            )
+        vector_indexes = vector_db.get_vector_indexes(
+            [
+                "moonsync-index-mood-feeling",
+                "moonsync-index-general",
+                "moonsync-index-diet-nutrition",
+                "moonsync-index-fitness-wellness",
+            ]
+        )
 
         # Update prompt to include sources
         sources_qa_prompt = [
@@ -219,23 +209,18 @@ class Model:
         sources_prompt = ChatPromptTemplate(sources_qa_prompt)
 
         # Create Query Engines
-        query_engines = []
-        dashboard_data_query_engines = []
-        for vector_index in vector_indexes:
-            query_engines.append(
-                vector_index.as_query_engine(
-                    llm=self.groq,
-                    similarity_top_k=2,
-                    text_qa_template=sources_prompt,
-                    # refine_template=refine_template
-                )
-            )
-            dashboard_data_query_engines.append(
-                vector_index.as_query_engine(
-                    similarity_top_k=2,
-                )
-            )
 
+        query_engines = QueryEngine.get_vector_query_engines(
+            vector_indexes=vector_indexes,
+            llm=self.groq,
+            similarity_top_k=2,
+            text_qa_template=sources_prompt,
+        )
+        dashboard_data_query_engines = QueryEngine.get_dashboard_query_engines(
+            vector_indexes=vector_indexes,
+            llm=self.groq,
+            similarity_top_k=2,
+        )
         (
             mood_feeling_query_engine,
             general_query_engine,
@@ -243,7 +228,6 @@ class Model:
             fitness_wellness_query_engine,
         ) = query_engines
 
-        # self.mood_feeling_qe, self.diet_nutrition_qe, self.fitness_wellness_qe = mood_feeling_query_engine, diet_nutrition_query_engine, fitness_wellness_query_engine
         self.mood_feeling_qe, _, self.diet_nutrition_qe, self.fitness_wellness_qe = (
             dashboard_data_query_engines
         )
@@ -289,6 +273,18 @@ class Model:
             df=self.df, verbose=True, pandas_prompt=DEFAULT_PANDAS_PROMPT, llm=self.llm
         )
 
+        # SQL Query Engine
+        url = os.environ["SUPABASE_DB_URL"]
+        engine = create_engine(url, future=True)
+        metadata_obj = MetaData()
+        metadata_obj.create_all(engine)
+        sql_database = SQLDatabase(engine, include_tables=["user_biometrics"])
+        sql_query_engine = NLSQLTableQueryEngine(
+            sql_database=sql_database,
+            tables=["user_biometrics"],
+            llm=self.llm,
+        )
+
         # setup token.json for gcal
         token_json = "/volumes/moonsync/google_credentials/token.json"
         destination_path = "token.json"
@@ -298,7 +294,9 @@ class Model:
 
         # Text QA Prompt
         # Get the current date
-        self.current_date = datetime.strptime(datetime.today().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
+        self.current_date = datetime.strptime(
+            datetime.today().strftime("%Y-%m-%d"), "%Y-%m-%d"
+        ).date()
         timestamp = datetime.fromisoformat(str(self.df.iloc[-1]["date"]))
         print("Current date: ", self.current_date)
         day_of_week = self.current_date.weekday()
@@ -313,7 +311,9 @@ class Model:
         ]
         self.day_name = day_names[day_of_week]
         self.content_template = f"\nImportant information to be considered while answering the query:\nCurrent Mensural Phase: {self.df.iloc[-1]['menstrual_phase']} \nToday's date: {self.current_date} \nDay of the week: {self.day_name} \n Current Location: New York City"
-        self.phase_info = f"My current mensural phase is: {self.df.iloc[-1]['menstrual_phase']}"
+        self.phase_info = (
+            f"My current mensural phase is: {self.df.iloc[-1]['menstrual_phase']}"
+        )
 
         chat_text_qa_msgs = [
             ChatMessage(
@@ -426,6 +426,16 @@ class Model:
             ),
         )
 
+        database_engine = QueryEngineTool(
+            query_engine=sql_query_engine,
+            metadata=ToolMetadata(
+                name="database",
+                description="Use this to get relevant biometrics (health parameters) data relevant to the query from the 'user_biometrics' SQL table."
+                "always use the terra_user_id to filter data for the given user. You have access to the following columns - "
+                "id, avg_hr_bpm, resting_hr_bpm, duration_in_bed_seconds_data, duration_deep_sleep, temperature_delta, avg_saturation_percentage, recovery_score, activity_score, sleep_score, stress_data, number_steps, total_burned_calories, date, terra_user_id",
+            ),
+        )
+
         SUB_QUESTION_PROMPT_TMPL = """\
         You are a world class state of the art agent who specializes in women's menstrual health and related topics.
 
@@ -464,13 +474,19 @@ class Model:
         from llama_index.core.schema import QueryBundle
         from llama_index.core.settings import Settings
         from llama_index.core.tools.types import ToolMetadata
-        
+
         class CustomOpenAIQuestionGenerator(OpenAIQuestionGenerator):
-            def generate(self, tools: Sequence[ToolMetadata], query: QueryBundle) -> List[SubQuestion]:
+            def generate(
+                self, tools: Sequence[ToolMetadata], query: QueryBundle
+            ) -> List[SubQuestion]:
                 tools_str = build_tools_text(tools)
                 query_str = query.query_str
                 question_list = cast(
-                    SubQuestionList, self._program(query_str=query_str.split("<Follow Up Message>")[1], tools_str=tools_str)
+                    SubQuestionList,
+                    self._program(
+                        query_str=query_str.split("<Follow Up Message>")[1],
+                        tools_str=tools_str,
+                    ),
                 )
                 return question_list.items
 
@@ -481,11 +497,14 @@ class Model:
                 query_str = query.query_str
                 question_list = cast(
                     SubQuestionList,
-                    await self._program.acall(query_str=query_str.split("<Follow Up Message>")[1], tools_str=tools_str),
+                    await self._program.acall(
+                        query_str=query_str.split("<Follow Up Message>")[1],
+                        tools_str=tools_str,
+                    ),
                 )
                 assert isinstance(question_list, SubQuestionList)
                 return question_list.items
-            
+
         question_gen = CustomOpenAIQuestionGenerator.from_defaults(
             prompt_template_str=SUB_QUESTION_PROMPT_TMPL, llm=self.subquestion_llm
         )
@@ -497,7 +516,8 @@ class Model:
                 general_tool,
                 fitness_wellness_tool,
                 default_tool,
-                biometric_tool,
+                # biometric_tool,
+                database_engine,
             ],
             response_synthesizer=response_synthesizer,
             question_gen=question_gen,
@@ -515,7 +535,6 @@ class Model:
 
             """
         )
-
 
         self.chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT),
@@ -619,18 +638,22 @@ class Model:
 
         # TODO change current location
         curr_history = [
-            ChatMessage(
-                role=MessageRole.SYSTEM,
-                content=self.SYSTEM_PROMPT 
-            )
+            ChatMessage(role=MessageRole.SYSTEM, content=self.SYSTEM_PROMPT)
         ]
         for message in messages:
             role = message["role"]
             content = message["content"]
             curr_history.append(ChatMessage(role=role, content=content))
 
-        curr_history.append(ChatMessage(role=MessageRole.USER, 
-                                        content=prompt + "\n" + self.content_template +  "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context. STRICTLY FOLLOW - Give a short and concise answer."))
+        curr_history.append(
+            ChatMessage(
+                role=MessageRole.USER,
+                content=prompt
+                + "\n"
+                + self.content_template
+                + "\nGive the output in a markdown format and ask the user if they want to schedule the event if relevant to the context. STRICTLY FOLLOW - Give a short and concise answer.",
+            )
+        )
         resp = self.pplx_llm.stream_chat(curr_history)
         for r in resp:
             yield r.delta
@@ -676,29 +699,32 @@ class Model:
         import uuid
         from llama_index.multi_modal_llms.azure_openai import AzureOpenAIMultiModal
         import os
-        
+
         prompt, image_url, image_response = "", "", ""
-        if (isinstance(item['prompt'], list)):
-            for value in item['prompt']:
-                if value['type'] == 'text':
-                    prompt = value['text']
-                if value['type'] == 'image_url':
-                    image_url = value['image_url']['url']   
-        else: 
+        if isinstance(item["prompt"], list):
+            for value in item["prompt"]:
+                if value["type"] == "text":
+                    prompt = value["text"]
+                if value["type"] == "image_url":
+                    image_url = value["image_url"]["url"]
+        else:
             prompt = item["prompt"]
-            
-            
-        messages = item["messages"]        
-        if(image_url):
-            print('IMAGE_URL', image_url[:100])
+
+        messages = item["messages"]
+        if image_url:
+            print("IMAGE_URL", image_url[:100])
             id = str(uuid.uuid4())
-            extension = image_url.split(',')[0].split('/')[1].split(';')[0]
-            img = Image.open(io.BytesIO(base64.decodebytes(bytes(image_url.split(',')[1], "utf-8"))))
+            extension = image_url.split(",")[0].split("/")[1].split(";")[0]
+            img = Image.open(
+                io.BytesIO(base64.decodebytes(bytes(image_url.split(",")[1], "utf-8")))
+            )
             img.save(f"/volumes/moonsync/data/img-{id}.{extension}")
-            
-            image_doc = ImageReader().load_data(file=f"/volumes/moonsync/data/img-{id}.{extension}")
-            print('Image Doc', image_doc)
-                        
+
+            image_doc = ImageReader().load_data(
+                file=f"/volumes/moonsync/data/img-{id}.{extension}"
+            )
+            print("Image Doc", image_doc)
+
             api_key = os.environ["AZURE_MULTI_MODAL_API_KEY"]
             azure_endpoint = os.environ["AZURE_MULTI_MODAL_ENDPOINT"]
 
@@ -710,18 +736,20 @@ class Model:
             #     api_version="2023-10-01-preview",
             #     max_new_tokens=300,
             # )
-            
+
             # image_response = azure_openai_mm_llm.complete(
             #     prompt="Describe the images as an alternative text. Give me a title and a description for the image.",
             #     image_documents=image_doc,
             # )
-            openai_mm_llm = OpenAIMultiModal(model="gpt-4-vision-preview", max_new_tokens=300)
+            openai_mm_llm = OpenAIMultiModal(
+                model="gpt-4-vision-preview", max_new_tokens=300
+            )
 
             image_response = openai_mm_llm.complete(
                 prompt="Describe the images as an alternative text. Give me a title and a detailed description for the image.",
                 image_documents=image_doc,
             )
-            
+
             print("Image description", image_response)
 
         # Get the headers
@@ -729,6 +757,10 @@ class Model:
         region = request.headers.get("x-vercel-ip-country-region", "New York")
         country = request.headers.get("x-vercel-ip-country", "USA")
 
+        # Get user terra id
+        terra_user_id = item.get("terra_user_id", None)
+        if terra_user_id:
+            prompt = prompt + f"\nTerra User ID: {terra_user_id}"
         print(f"City: {city}, Region: {region}, Country: {country}")
 
         if "@internet" in prompt:
@@ -744,8 +776,13 @@ class Model:
             )
 
         if image_response != "":
-            prompt = prompt + "\n" + "Additional information about the image uploaded \n " +  image_response.text
-        
+            prompt = (
+                prompt
+                + "\n"
+                + "Additional information about the image uploaded \n "
+                + image_response.text
+            )
+
         return StreamingResponse(
             self._inference(prompt=prompt, messages=messages),
             media_type="text/event-stream",
@@ -807,7 +844,7 @@ class Model:
             print(f"Location: {location}")
             print(f"Condition: {condition}")
             print(f"Current temperature: {temp_f}°F")
-        else: 
+        else:
             print("Error fetching weather data")
 
         return {"location": location, "condition": condition, "temp_f": temp_f}
@@ -834,33 +871,33 @@ class Model:
         }
         response_json.update(weather_data)
         return response_json
-    
+
     @web_endpoint(method="POST", label="init-biometrics")
     def initial_biometric_data_load(self, request: Request, item: Dict):
-        user_id = item["user_id"]        
+        user_id = item["user_id"]
 
         # Get the biometric data
-        get_onboarding_data(self.TERRA_DEV_ID, self.TERRA_API_KEY, user_id, self.supabase)
+        get_onboarding_data(
+            self.TERRA_DEV_ID, self.TERRA_API_KEY, user_id, self.supabase
+        )
 
-        response_json = {
-            "status" : "complete"
-        }
+        response_json = {"status": "complete"}
 
         return response_json
-    
+
     @web_endpoint(method="POST", label="dashboard-biometrics")
     def dasboard_biometric_data_load(self, request: Request, item: Dict):
         import os
 
-        user_id = item["user_id"]        
+        user_id = item["user_id"]
         DEV_ID = os.environ["TERRA_DEV_ID"]
         API_KEY = os.environ["TERRA_API_KEY"]
 
-        #TODO - Update menstrual phase
+        # TODO - Update menstrual phase
         menstrual_phase = "Follicular"
 
         sleep, temperature = get_dashboard_data(DEV_ID, API_KEY, user_id)
-        print('[DASHBOARD DATA]', sleep, temperature)
+        print("[DASHBOARD DATA]", sleep, temperature)
         m, _ = divmod(sleep, 60)
         hours, mins = divmod(m, 60)
 
@@ -869,10 +906,10 @@ class Model:
         weather_data = self._get_weather()
 
         response_json = {
-            "status" : "complete",
+            "status": "complete",
             "sleep": sleep,
             "body_temperature": round(temperature if temperature else 0 + 98.6, 2),
-            "menstrual_phase": menstrual_phase
+            "menstrual_phase": menstrual_phase,
         }
 
         response_json.update(weather_data)
